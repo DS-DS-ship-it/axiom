@@ -1,4 +1,7 @@
-use tokio::{io::{AsyncBufReadExt, BufReader}, net::TcpListener};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    net::TcpListener,
+};
 use tracing::{info, warn};
 
 use crate::error::Result;

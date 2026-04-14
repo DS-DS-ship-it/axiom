@@ -11,7 +11,10 @@ impl ConsensusEngine {
     pub fn new(config: NodeConfig) -> Self {
         Self {
             config,
-            state: ChainState { tip_hash: "GENESIS".to_string(), ..Default::default() },
+            state: ChainState {
+                tip_hash: "GENESIS".to_string(),
+                ..Default::default()
+            },
         }
     }
 
