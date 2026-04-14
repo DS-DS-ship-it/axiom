@@ -35,6 +35,7 @@ fn sample_config(state_path: PathBuf, chain_id: &str) -> NodeConfig {
         validator_power: 100,
         genesis_path: "testnet/genesis/genesis.json".to_string(),
         state_path: Some(state_path.to_string_lossy().to_string()),
+        wal_path: None,
     }
 }
 
@@ -66,11 +67,12 @@ fn snapshot_round_trip_restores_saved_state() {
         },
     );
 
-    save_snapshot(&path, "axiom-local", "node1", &state).unwrap();
+    save_snapshot(&path, "axiom-local", "node1", 3, &state).unwrap();
     let snapshot = load_snapshot(&path).unwrap();
 
     assert_eq!(snapshot.chain_id, "axiom-local");
     assert_eq!(snapshot.node_name, "node1");
+    assert_eq!(snapshot.wal_entries_applied, 3);
     assert_eq!(snapshot.state.height, 7);
     assert_eq!(snapshot.state.tip_hash, "tip_7");
     assert_eq!(snapshot.state.total_burned, 12);
@@ -89,6 +91,7 @@ fn engine_load_or_new_restores_state_from_disk() {
     engine.state.height = 42;
     engine.state.tip_hash = "tip_42".to_string();
     engine.state.total_burned = 99;
+    engine.wal_entries_applied = 5;
     engine.state.accounts.insert(
         "alice".to_string(),
         Account {
@@ -115,6 +118,7 @@ fn engine_load_or_new_restores_state_from_disk() {
     assert_eq!(restored.state.total_burned, 99);
     assert_eq!(restored.state.accounts["alice"].balance, 9999);
     assert_eq!(restored.state.validators["node1"].stake, 1000);
+    assert_eq!(restored.wal_entries_applied, 5);
 
     let _ = fs::remove_file(path);
 }
@@ -130,7 +134,7 @@ fn engine_rejects_wrong_chain_id_snapshot() {
         ..Default::default()
     };
 
-    save_snapshot(&path, "different-chain", "node1", &state).unwrap();
+    save_snapshot(&path, "different-chain", "node1", 0, &state).unwrap();
 
     let err = ConsensusEngine::load_or_new(config)
         .unwrap_err()
@@ -149,11 +153,13 @@ fn repeated_persist_overwrites_snapshot_for_restart() {
     let mut engine = ConsensusEngine::new(config.clone());
     engine.state.height = 1;
     engine.state.tip_hash = "tip_1".to_string();
+    engine.wal_entries_applied = 1;
     engine.persist_if_configured().unwrap();
 
     engine.state.height = 2;
     engine.state.tip_hash = "tip_2".to_string();
     engine.state.total_tipped = 77;
+    engine.wal_entries_applied = 4;
     engine.persist_if_configured().unwrap();
 
     let restored = ConsensusEngine::load_or_new(config).unwrap();
@@ -161,6 +167,7 @@ fn repeated_persist_overwrites_snapshot_for_restart() {
     assert_eq!(restored.state.height, 2);
     assert_eq!(restored.state.tip_hash, "tip_2");
     assert_eq!(restored.state.total_tipped, 77);
+    assert_eq!(restored.wal_entries_applied, 4);
 
     let _ = fs::remove_file(path);
 }

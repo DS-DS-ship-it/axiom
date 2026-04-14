@@ -14,6 +14,7 @@ use crate::state::ChainState;
 pub struct StateSnapshot {
     pub chain_id: String,
     pub node_name: String,
+    pub wal_entries_applied: usize,
     pub state: ChainState,
 }
 
@@ -25,6 +26,7 @@ pub fn save_snapshot(
     path: impl AsRef<Path>,
     chain_id: &str,
     node_name: &str,
+    wal_entries_applied: usize,
     state: &ChainState,
 ) -> Result<()> {
     let path = path.as_ref();
@@ -38,6 +40,7 @@ pub fn save_snapshot(
     let snapshot = StateSnapshot {
         chain_id: chain_id.to_string(),
         node_name: node_name.to_string(),
+        wal_entries_applied,
         state: state.clone(),
     };
 
@@ -58,14 +61,14 @@ pub fn load_snapshot(path: impl AsRef<Path>) -> Result<StateSnapshot> {
     Ok(serde_json::from_str(&text)?)
 }
 
-pub fn load_state_for_chain(
+pub fn load_snapshot_for_chain(
     path: impl AsRef<Path>,
     expected_chain_id: &str,
-) -> Result<ChainState> {
+) -> Result<StateSnapshot> {
     let snapshot = load_snapshot(path)?;
     ensure!(
         snapshot.chain_id == expected_chain_id,
         "wrong chain id in persisted state"
     );
-    Ok(snapshot.state)
+    Ok(snapshot)
 }

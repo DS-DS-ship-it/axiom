@@ -14,6 +14,8 @@ pub struct NodeConfig {
     pub genesis_path: String,
     #[serde(default)]
     pub state_path: Option<String>,
+    #[serde(default)]
+    pub wal_path: Option<String>,
 }
 
 impl NodeConfig {

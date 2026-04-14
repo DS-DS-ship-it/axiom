@@ -14,6 +14,7 @@ fn sample_config() -> NodeConfig {
         validator_power: 1,
         genesis_path: "testnet/genesis/genesis.json".to_string(),
         state_path: None,
+        wal_path: None,
     }
 }
 
@@ -24,6 +25,7 @@ fn consensus_engine_starts_at_genesis() {
     assert_eq!(engine.state.height, 0);
     assert_eq!(engine.state.tip_hash, "GENESIS");
     assert!(engine.state.validators.is_empty());
+    assert_eq!(engine.wal_entries_applied, 0);
 }
 
 #[test]

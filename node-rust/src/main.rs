@@ -24,6 +24,8 @@ async fn main() -> anyhow::Result<()> {
         address = %node_addr,
         bind = %config.bind_addr,
         state_path = ?config.state_path,
+        wal_path = ?config.wal_path,
+        wal_entries_applied = engine.wal_entries_applied,
         "validator starting"
     );
 
