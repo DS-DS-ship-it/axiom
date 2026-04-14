@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Account {
@@ -30,6 +30,8 @@ pub struct ChainState {
     pub validators: BTreeMap<String, Validator>,
     pub total_burned: u128,
     pub total_tipped: u128,
+    pub total_slashed: u128,
+    pub applied_evidence_ids: BTreeSet<String>,
     pub height: u64,
     pub tip_hash: String,
 }
