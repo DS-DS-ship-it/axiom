@@ -11,3 +11,5 @@ pub mod execution;
 pub mod finality;
 pub mod persistence;
 pub mod slashing;
+pub mod commit;
+pub mod wal;
