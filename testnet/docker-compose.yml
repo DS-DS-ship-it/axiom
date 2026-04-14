@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  node1:
+    build: ../node-rust
+    command: ["cargo", "run", "--", "--config", "examples/node1.toml"]
+    ports: ["7001:7001"]
+  node2:
+    build: ../node-rust
+    command: ["cargo", "run", "--", "--config", "examples/node2.toml"]
+    ports: ["7002:7002"]
+  node3:
+    build: ../node-rust
+    command: ["cargo", "run", "--", "--config", "examples/node3.toml"]
+    ports: ["7003:7003"]
+  node4:
+    build: ../node-rust
+    command: ["cargo", "run", "--", "--config", "examples/node4.toml"]
+    ports: ["7004:7004"]

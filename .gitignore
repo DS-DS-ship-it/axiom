@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+.DS_Store
+node-rust/target/
+*.log
+*.sqlite
+coverage.xml
+htmlcov/
+.env

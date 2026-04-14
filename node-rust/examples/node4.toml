@@ -1,0 +1,7 @@
+chain_id = "axiom-testnet-1"
+node_name = "node4"
+bind_addr = "127.0.0.1:7004"
+p2p_peers = ["127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003", "127.0.0.1:7004"]
+private_key_hex = "4444444444444444444444444444444444444444444444444444444444444444"
+validator_power = 100
+genesis_path = "../testnet/genesis/genesis.json"

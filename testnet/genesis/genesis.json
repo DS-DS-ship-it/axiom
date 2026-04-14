@@ -1,0 +1,37 @@
+{
+  "chain_id": "axiom-testnet-1",
+  "height": 0,
+  "tip_hash": "GENESIS",
+  "base_fee": 1,
+  "validators": [
+    {
+      "name": "node1",
+      "address": "axm_validator_1",
+      "public_key": "placeholder",
+      "power": 100,
+      "stake": 100
+    },
+    {
+      "name": "node2",
+      "address": "axm_validator_2",
+      "public_key": "placeholder",
+      "power": 100,
+      "stake": 100
+    },
+    {
+      "name": "node3",
+      "address": "axm_validator_3",
+      "public_key": "placeholder",
+      "power": 100,
+      "stake": 100
+    },
+    {
+      "name": "node4",
+      "address": "axm_validator_4",
+      "public_key": "placeholder",
+      "power": 100,
+      "stake": 100
+    }
+  ],
+  "accounts": {}
+}
