@@ -13,6 +13,7 @@ fn sample_config() -> NodeConfig {
         private_key_hex: "11".repeat(32),
         validator_power: 1,
         genesis_path: "testnet/genesis/genesis.json".to_string(),
+        state_path: None,
     }
 }
 

@@ -9,3 +9,4 @@ pub mod types;
 pub mod validation;
 pub mod execution;
 pub mod finality;
+pub mod persistence;

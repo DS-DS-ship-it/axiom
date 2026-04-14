@@ -12,6 +12,8 @@ pub struct NodeConfig {
     pub private_key_hex: String,
     pub validator_power: u64,
     pub genesis_path: String,
+    #[serde(default)]
+    pub state_path: Option<String>,
 }
 
 impl NodeConfig {

@@ -18,8 +18,14 @@ async fn main() -> anyhow::Result<()> {
     let sk = crypto::signing_key_from_hex(&config.private_key_hex)?;
     let node_addr = crypto::address_from_vk(&sk.verifying_key());
 
-    let mut engine = ConsensusEngine::new(config.clone());
-    tracing::info!(node = %config.node_name, address = %node_addr, bind = %config.bind_addr, "validator starting");
+    let mut engine = ConsensusEngine::load_or_new(config.clone())?;
+    tracing::info!(
+        node = %config.node_name,
+        address = %node_addr,
+        bind = %config.bind_addr,
+        state_path = ?config.state_path,
+        "validator starting"
+    );
 
     let bind_addr = config.bind_addr.clone();
     tokio::spawn(async move {
@@ -30,6 +36,11 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         engine.tick();
+
+        if let Err(err) = engine.persist_if_configured() {
+            tracing::error!(error = %err, "state persistence failed");
+        }
+
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 }
