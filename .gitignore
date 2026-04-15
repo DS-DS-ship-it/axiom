@@ -10,3 +10,9 @@ node-rust/target/
 coverage.xml
 htmlcov/
 .env
+
+# AXIOM local runtime artifacts
+*.bak
+testnet/devnet/node*-data/
+testnet/devnet/*.wal.jsonl
+testnet/devnet/*-state.json
