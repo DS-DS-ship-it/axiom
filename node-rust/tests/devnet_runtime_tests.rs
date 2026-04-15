@@ -1,0 +1,235 @@
+use std::{
+    collections::BTreeMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use axiom_node::{
+    axiom1::{
+        Axiom1Genesis, GenesisAccount, GenesisValidator, AXIOM1_CHAIN_ID, AXIOM1_PROTOCOL_VERSION,
+    },
+    config::NodeConfig,
+    crypto::{address_from_vk, generate_key, public_key_hex, sign_bytes},
+    devnet_runtime::DevnetRuntime,
+    network_auth::{
+        now_ms, sign_ack, sign_envelope, sign_hello, PeerAck, PeerHello, SignedEnvelope,
+        WIRE_PROTOCOL_VERSION,
+    },
+    state::Account,
+    types::Transaction,
+    validation::signing_bytes,
+};
+
+fn temp_dir(prefix: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("{}-{}-{}", prefix, std::process::id(), nanos))
+}
+
+fn write_devnet_files(
+    root: &std::path::Path,
+) -> (
+    NodeConfig,
+    BTreeMap<String, String>,
+    BTreeMap<String, ed25519_dalek::SigningKey>,
+) {
+    std::fs::create_dir_all(root).unwrap();
+
+    let key_hexes = [
+        ("node1", "1111111111111111111111111111111111111111111111111111111111111111"),
+        ("node2", "2222222222222222222222222222222222222222222222222222222222222222"),
+        ("node3", "3333333333333333333333333333333333333333333333333333333333333333"),
+        ("node4", "4444444444444444444444444444444444444444444444444444444444444444"),
+    ];
+
+    let mut keys = BTreeMap::new();
+    let mut key_map = BTreeMap::new();
+    let mut validators = Vec::new();
+
+    for (i, (name, hex)) in key_hexes.iter().enumerate() {
+        let sk = axiom_node::crypto::signing_key_from_hex(hex).unwrap();
+        let pk = public_key_hex(&sk);
+        validators.push(GenesisValidator {
+            name: (*name).to_string(),
+            public_key: pk,
+            bind_addr: format!("127.0.0.1:{}", 7501 + i),
+            power: 100,
+            stake: 1_000_000,
+        });
+        keys.insert((*name).to_string(), sk);
+        key_map.insert((*name).to_string(), (*hex).to_string());
+    }
+
+    let genesis = Axiom1Genesis {
+        chain_id: AXIOM1_CHAIN_ID.to_string(),
+        protocol_version: AXIOM1_PROTOCOL_VERSION,
+        genesis_time_ms: 1_700_000_000_000,
+        base_fee: 2,
+        checkpoint_interval: 10,
+        validators,
+        accounts: vec![GenesisAccount {
+            address: "axm_devnet_faucet".to_string(),
+            balance: 1_000_000_000,
+            nonce: 0,
+            staked: 0,
+        }],
+        metadata: BTreeMap::from([
+            ("network".to_string(), "devnet".to_string()),
+            ("asset".to_string(), "AXM".to_string()),
+        ]),
+    };
+
+    let genesis_path = root.join("axiom-1-genesis.json");
+    genesis.write_to_path(&genesis_path).unwrap();
+
+    let config = NodeConfig {
+        chain_id: AXIOM1_CHAIN_ID.to_string(),
+        node_name: "node1".to_string(),
+        bind_addr: "127.0.0.1:7501".to_string(),
+        p2p_peers: vec![
+            "127.0.0.1:7502".to_string(),
+            "127.0.0.1:7503".to_string(),
+            "127.0.0.1:7504".to_string(),
+        ],
+        private_key_hex: key_map["node1"].clone(),
+        validator_power: 100,
+        genesis_path: genesis_path.to_string_lossy().to_string(),
+        state_path: Some(root.join("state.json").to_string_lossy().to_string()),
+        wal_path: Some(root.join("wal.jsonl").to_string_lossy().to_string()),
+    };
+
+    (config, key_map, keys)
+}
+
+fn signed_transfer(
+    sender_key: &ed25519_dalek::SigningKey,
+    sender: &str,
+    recipient: &str,
+    nonce: u64,
+    value: u64,
+) -> Transaction {
+    let mut tx = Transaction {
+        chain_id: AXIOM1_CHAIN_ID.to_string(),
+        kind: "transfer".to_string(),
+        sender: sender.to_string(),
+        sender_pubkey: public_key_hex(sender_key),
+        nonce,
+        gas_limit: 10,
+        max_fee_per_gas: 3,
+        value,
+        recipient: Some(recipient.to_string()),
+        data: None,
+        timestamp_ms: 1_700_000_000_000 + nonce,
+        signature: String::new(),
+    };
+    tx.signature = sign_bytes(sender_key, &signing_bytes(&tx).unwrap());
+    tx
+}
+
+#[test]
+fn axiom1_bootstrap_and_commit_round_trip() {
+    let root = temp_dir("axiom1-devnet");
+    let (config, key_map, _keys) = write_devnet_files(&root);
+    let mut runtime = DevnetRuntime::bootstrap(config.clone(), root.join("node1")).unwrap();
+
+    let alice_key = generate_key();
+    let bob_key = generate_key();
+    let alice = address_from_vk(&alice_key.verifying_key());
+    let bob = address_from_vk(&bob_key.verifying_key());
+
+    runtime.state.accounts.insert(
+        alice.clone(),
+        Account {
+            balance: 1_000_000,
+            nonce: 0,
+            staked: 0,
+        },
+    );
+
+    let block = runtime
+        .propose_block(
+            vec![signed_transfer(&alice_key, &alice, &bob, 0, 1000)],
+            1_700_000_010_000,
+        )
+        .unwrap();
+
+    let votes = vec![
+        runtime
+            .sign_vote_for_block("node1", &key_map["node1"], &block)
+            .unwrap(),
+        runtime
+            .sign_vote_for_block("node2", &key_map["node2"], &block)
+            .unwrap(),
+        runtime
+            .sign_vote_for_block("node3", &key_map["node3"], &block)
+            .unwrap(),
+    ];
+
+    let cert = runtime.commit_block(&block, &votes).unwrap();
+    assert_eq!(runtime.state.height, 1);
+    assert_eq!(runtime.state.tip_hash, cert.block_hash);
+    drop(runtime);
+
+
+    let restored = DevnetRuntime::bootstrap(config, root.join("node1")).unwrap();
+    assert_eq!(restored.state.height, 1);
+    assert_eq!(restored.state.tip_hash, cert.block_hash);
+}
+
+#[test]
+fn axiom1_authenticated_session_can_verify_signed_envelope() {
+    let root = temp_dir("axiom1-auth");
+    let (config, key_map, keys) = write_devnet_files(&root);
+    let mut runtime = DevnetRuntime::bootstrap(config, root.join("node1")).unwrap();
+
+    let hello = sign_hello(
+        PeerHello {
+            version: WIRE_PROTOCOL_VERSION,
+            chain_id: AXIOM1_CHAIN_ID.to_string(),
+            node_name: "node2".to_string(),
+            bind_addr: "127.0.0.1:7502".to_string(),
+            public_key: public_key_hex(keys.get("node2").unwrap()),
+            challenge: "hello-1".to_string(),
+            timestamp_ms: now_ms(),
+            signature: String::new(),
+        },
+        &key_map["node2"],
+    )
+    .unwrap();
+
+    let ack = sign_ack(
+        PeerAck {
+            version: WIRE_PROTOCOL_VERSION,
+            chain_id: AXIOM1_CHAIN_ID.to_string(),
+            node_name: "node1".to_string(),
+            bind_addr: "127.0.0.1:7501".to_string(),
+            public_key: public_key_hex(keys.get("node1").unwrap()),
+            peer_challenge: hello.challenge.clone(),
+            own_challenge: "ack-1".to_string(),
+            timestamp_ms: now_ms(),
+            signature: String::new(),
+        },
+        &key_map["node1"],
+    )
+    .unwrap();
+
+    let session = runtime.authenticate_peer(&hello, &ack).unwrap();
+
+    let env = sign_envelope(
+        SignedEnvelope {
+            version: WIRE_PROTOCOL_VERSION,
+            chain_id: AXIOM1_CHAIN_ID.to_string(),
+            session_id: session.session_id.clone(),
+            sender: "node2".to_string(),
+            msg_type: "ping".to_string(),
+            payload: serde_json::json!({"ok": true}),
+            timestamp_ms: now_ms(),
+            signature: String::new(),
+        },
+        &key_map["node2"],
+    )
+    .unwrap();
+
+    runtime.verify_peer_envelope(&session.session_id, &env).unwrap();
+}

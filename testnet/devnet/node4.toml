@@ -1,0 +1,9 @@
+chain_id = "axiom-1"
+node_name = "node4"
+bind_addr = "127.0.0.1:7404"
+p2p_peers = ["127.0.0.1:7401", "127.0.0.1:7402", "127.0.0.1:7403"]
+private_key_hex = "4444444444444444444444444444444444444444444444444444444444444444"
+validator_power = 100
+genesis_path = "testnet/devnet/axiom-1-genesis.json"
+state_path = "testnet/devnet/node4-state.json"
+wal_path = "testnet/devnet/node4.wal.jsonl"
