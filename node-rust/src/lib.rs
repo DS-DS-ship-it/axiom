@@ -13,3 +13,7 @@ pub mod persistence;
 pub mod slashing;
 pub mod commit;
 pub mod wal;
+pub mod state_transition;
+pub mod network_auth;
+pub mod storage_engine;
+pub mod checkpoint;
