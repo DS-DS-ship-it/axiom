@@ -10,14 +10,16 @@ use axiom_node::{
     config::NodeConfig,
     crypto::{public_key_hex, signing_key_from_hex},
     devnet_runtime::DevnetRuntime,
+    finality::block_id,
     network_auth::{
         now_ms, sign_ack, sign_envelope, sign_hello, PeerAck, PeerHello, SignedEnvelope,
         WIRE_PROTOCOL_VERSION,
     },
-    types::Transaction,
+    types::{Block, Transaction, Vote},
+    validation::validate_transaction,
 };
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -35,6 +37,7 @@ use tokio::{
 type SharedRuntime = Arc<Mutex<DevnetRuntime>>;
 type SharedMempool = Arc<Mutex<VecDeque<Transaction>>>;
 type SharedSessions = Arc<Mutex<HashMap<String, String>>>;
+type SharedPending = Arc<Mutex<HashMap<String, PendingBlock>>>;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -53,6 +56,22 @@ struct AppState {
     checkpoint_interval: u64,
 }
 
+#[derive(Debug, Clone)]
+struct PendingBlock {
+    block: Block,
+    votes: Vec<Vote>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum WireMessage {
+    GossipTx { tx: Transaction },
+    Proposal { block: Block, proposer: String },
+    Vote { block_hash: String, vote: Vote, proposer: String },
+    Commit { block: Block, votes: Vec<Vote> },
+    Ping,
+}
+
 #[derive(Serialize)]
 struct StatusView {
     node_name: String,
@@ -61,6 +80,15 @@ struct StatusView {
     connected_peer_count: usize,
     last_checkpoint_height: u64,
     mempool_size: usize,
+}
+
+#[derive(Serialize)]
+struct AccountView {
+    address: String,
+    found: bool,
+    balance: u128,
+    nonce: u64,
+    staked: u128,
 }
 
 #[derive(Deserialize)]
@@ -94,6 +122,38 @@ fn derive_status_addr(bind_addr: &str) -> Result<String> {
     Ok(format!("{host}:{}", port + 1000))
 }
 
+fn current_proposer_name(runtime: &DevnetRuntime) -> Option<String> {
+    let mut names = runtime.state.validators.keys().cloned().collect::<Vec<_>>();
+    names.sort();
+    if names.is_empty() {
+        return None;
+    }
+    let next_height = runtime.state.height + 1;
+    let idx = ((next_height.saturating_sub(1)) as usize) % names.len();
+    Some(names[idx].clone())
+}
+
+fn validator_bind_addr(runtime: &DevnetRuntime, name: &str) -> Option<String> {
+    if name == runtime.config.node_name {
+        return Some(runtime.config.bind_addr.clone());
+    }
+
+    let suffix = match name {
+        "node1" => ":7401",
+        "node2" => ":7402",
+        "node3" => ":7403",
+        "node4" => ":7404",
+        _ => return None,
+    };
+
+    runtime
+        .config
+        .p2p_peers
+        .iter()
+        .find(|addr| addr.ends_with(suffix))
+        .cloned()
+}
+
 async fn status_handler(State(app): State<AppState>) -> impl IntoResponse {
     let rt = app.runtime.lock().await;
     let mempool = app.mempool.lock().await;
@@ -115,28 +175,309 @@ async fn status_handler(State(app): State<AppState>) -> impl IntoResponse {
     })
 }
 
+
+async fn account_handler(
+    Path(address): Path<String>,
+    State(app): State<AppState>,
+) -> impl IntoResponse {
+    let rt = app.runtime.lock().await;
+    if let Some(acct) = rt.state.accounts.get(&address) {
+        Json(AccountView {
+            address,
+            found: true,
+            balance: acct.balance,
+            nonce: acct.nonce,
+            staked: acct.staked,
+        })
+    } else {
+        Json(AccountView {
+            address,
+            found: false,
+            balance: 0,
+            nonce: 0,
+            staked: 0,
+        })
+    }
+}
+
 async fn submit_tx_handler(
     State(app): State<AppState>,
     Json(req): Json<SubmitTxRequest>,
 ) -> Result<Json<SubmitTxResponse>, (StatusCode, String)> {
-    {
+    let cfg = {
         let rt = app.runtime.lock().await;
-        axiom_node::validation::validate_transaction(&req.tx, &rt.state, &rt.config.chain_id)
+        validate_transaction(&req.tx, &rt.state, &rt.config.chain_id)
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        rt.config.clone()
+    };
+
+    {
+        let mut mempool = app.mempool.lock().await;
+        mempool.push_back(req.tx.clone());
     }
 
-    let mut mempool = app.mempool.lock().await;
-    mempool.push_back(req.tx);
+    let peers = cfg.p2p_peers.clone();
+    for peer in peers {
+        let _ = send_wire_message(
+            peer,
+            cfg.clone(),
+            app.runtime.clone(),
+            app.sessions.clone(),
+            WireMessage::GossipTx { tx: req.tx.clone() },
+        )
+        .await;
+    }
 
+    let mempool_size = app.mempool.lock().await.len();
     Ok(Json(SubmitTxResponse {
         accepted: true,
-        mempool_size: mempool.len(),
+        mempool_size,
     }))
+}
+
+async fn handshake_outbound(
+    stream: TcpStream,
+    runtime: SharedRuntime,
+    sessions: SharedSessions,
+    cfg: NodeConfig,
+) -> Result<(tokio::net::tcp::OwnedWriteHalf, String)> {
+    let (reader_half, mut writer) = stream.into_split();
+    let mut lines = BufReader::new(reader_half).lines();
+
+    let sk = signing_key_from_hex(&cfg.private_key_hex)?;
+    let hello = sign_hello(
+        PeerHello {
+            version: WIRE_PROTOCOL_VERSION,
+            chain_id: cfg.chain_id.clone(),
+            node_name: cfg.node_name.clone(),
+            bind_addr: cfg.bind_addr.clone(),
+            public_key: public_key_hex(&sk),
+            challenge: format!("hello-{}-{}", cfg.node_name, now_ms()),
+            timestamp_ms: now_ms(),
+            signature: String::new(),
+        },
+        &cfg.private_key_hex,
+    )?;
+
+    writer
+        .write_all(serde_json::to_string(&hello)?.as_bytes())
+        .await?;
+    writer.write_all(b"\n").await?;
+
+    let ack_line = lines
+        .next_line()
+        .await?
+        .ok_or_else(|| anyhow!("peer closed before ack"))?;
+
+    let ack: PeerAck = serde_json::from_str(&ack_line)
+        .context("decoding inbound ack")?;
+
+    let session = {
+        let mut rt = runtime.lock().await;
+        rt.authenticate_peer(&hello, &ack)?
+    };
+
+    sessions
+        .lock()
+        .await
+        .insert(ack.node_name.clone(), session.session_id.clone());
+
+    Ok((writer, session.session_id))
+}
+
+async fn send_wire_message(
+    peer_addr: String,
+    cfg: NodeConfig,
+    runtime: SharedRuntime,
+    sessions: SharedSessions,
+    msg: WireMessage,
+) -> Result<()> {
+    let stream = TcpStream::connect(&peer_addr)
+        .await
+        .with_context(|| format!("connecting to {}", peer_addr))?;
+
+    let (mut writer, session_id) =
+        handshake_outbound(stream, runtime, sessions, cfg.clone()).await?;
+
+    let payload = serde_json::to_value(msg)?;
+    let env = sign_envelope(
+        SignedEnvelope {
+            version: WIRE_PROTOCOL_VERSION,
+            chain_id: cfg.chain_id.clone(),
+            session_id,
+            sender: cfg.node_name.clone(),
+            msg_type: "wire".to_string(),
+            payload,
+            timestamp_ms: now_ms(),
+            signature: String::new(),
+        },
+        &cfg.private_key_hex,
+    )?;
+
+    writer
+        .write_all(serde_json::to_string(&env)?.as_bytes())
+        .await?;
+    writer.write_all(b"\n").await?;
+    Ok(())
+}
+
+async fn try_commit_pending(
+    runtime: SharedRuntime,
+    pending: SharedPending,
+) -> Result<Option<(Block, Vec<Vote>)>> {
+    let hashes = {
+        let map = pending.lock().await;
+        map.keys().cloned().collect::<Vec<_>>()
+    };
+
+    for hash in hashes {
+        let maybe_pb = {
+            let map = pending.lock().await;
+            map.get(&hash).cloned()
+        };
+
+        let Some(pb) = maybe_pb else { continue; };
+
+        let commit_ok = {
+            let mut rt = runtime.lock().await;
+            rt.commit_block(&pb.block, &pb.votes)
+        };
+
+        if commit_ok.is_ok() {
+            pending.lock().await.remove(&hash);
+            return Ok(Some((pb.block, pb.votes)));
+        }
+    }
+
+    Ok(None)
+}
+
+async fn handle_wire_message(
+    env: SignedEnvelope,
+    runtime: SharedRuntime,
+    mempool: SharedMempool,
+    pending: SharedPending,
+    sessions: SharedSessions,
+    cfg: NodeConfig,
+    session_id: String,
+) -> Result<()> {
+    {
+        let rt = runtime.lock().await;
+        rt.verify_peer_envelope(&session_id, &env)?;
+    }
+
+    let msg: WireMessage = serde_json::from_value(env.payload)?;
+
+    match msg {
+        WireMessage::GossipTx { tx } => {
+            let valid = {
+                let rt = runtime.lock().await;
+                validate_transaction(&tx, &rt.state, &rt.config.chain_id).is_ok()
+            };
+            if valid {
+                mempool.lock().await.push_back(tx);
+            }
+        }
+
+        WireMessage::Proposal { block, proposer } => {
+            let proposer_addr = {
+                let rt = runtime.lock().await;
+                validator_bind_addr(&rt, &proposer)
+            };
+
+            let Some(proposer_addr) = proposer_addr else {
+                return Ok(());
+            };
+
+            let vote = {
+                let rt = runtime.lock().await;
+                rt.sign_vote_for_block(&cfg.node_name, &cfg.private_key_hex, &block)?
+            };
+
+            let hash = block_id(&block)?;
+            let _ = send_wire_message(
+                proposer_addr,
+                cfg.clone(),
+                runtime.clone(),
+                sessions.clone(),
+                WireMessage::Vote {
+                    block_hash: hash,
+                    vote,
+                    proposer,
+                },
+            )
+            .await;
+        }
+
+        WireMessage::Vote {
+            block_hash,
+            vote,
+            proposer,
+        } => {
+            if proposer != cfg.node_name {
+                return Ok(());
+            }
+
+            {
+                let mut map = pending.lock().await;
+                if let Some(entry) = map.get_mut(&block_hash) {
+                    entry.votes.push(vote);
+                }
+            }
+
+            if let Some((block, votes)) = try_commit_pending(runtime.clone(), pending.clone()).await?
+            {
+                let peers = {
+                    let rt = runtime.lock().await;
+                    rt.config.p2p_peers.clone()
+                };
+
+                println!(
+                    "[{}] committed block height={} hash={}",
+                    cfg.node_name,
+                    block.header.height,
+                    block_id(&block)?
+                );
+
+                for peer in peers {
+                    let _ = send_wire_message(
+                        peer,
+                        cfg.clone(),
+                        runtime.clone(),
+                        sessions.clone(),
+                        WireMessage::Commit {
+                            block: block.clone(),
+                            votes: votes.clone(),
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+
+        WireMessage::Commit { block, votes } => {
+            let should_apply = {
+                let rt = runtime.lock().await;
+                rt.state.height < block.header.height
+            };
+
+            if should_apply {
+                let mut rt = runtime.lock().await;
+                let _ = rt.commit_block(&block, &votes)?;
+            }
+        }
+
+        WireMessage::Ping => {}
+    }
+
+    Ok(())
 }
 
 async fn handle_inbound(
     socket: TcpStream,
     runtime: SharedRuntime,
+    mempool: SharedMempool,
+    pending: SharedPending,
     sessions: SharedSessions,
     cfg: NodeConfig,
 ) -> Result<()> {
@@ -202,97 +543,135 @@ async fn handle_inbound(
             }
         };
 
-        let verify = {
-            let rt = runtime.lock().await;
-            rt.verify_peer_envelope(&session_id, &env)
-        };
-
-        if let Err(err) = verify {
-            eprintln!("[{}] verify_peer_envelope failed: {err:#}", cfg.node_name);
-            continue;
+        if let Err(err) = handle_wire_message(
+            env,
+            runtime.clone(),
+            mempool.clone(),
+            pending.clone(),
+            sessions.clone(),
+            cfg.clone(),
+            session_id.clone(),
+        )
+        .await
+        {
+            eprintln!("[{}] wire message error: {err:#}", cfg.node_name);
         }
-
-        println!(
-            "[{}] inbound msg_type={} from {}",
-            cfg.node_name, env.msg_type, env.sender
-        );
     }
 
     Ok(())
 }
 
-async fn dial_peer(
-    peer_addr: String,
+async fn producer_loop(
     runtime: SharedRuntime,
+    mempool: SharedMempool,
+    pending: SharedPending,
     sessions: SharedSessions,
     cfg: NodeConfig,
 ) -> Result<()> {
-    let stream = TcpStream::connect(&peer_addr)
-        .await
-        .with_context(|| format!("connecting to {}", peer_addr))?;
+    loop {
+        sleep(Duration::from_secs(2)).await;
 
-    let (reader_half, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader_half).lines();
+        let maybe_block = {
+            let proposer_ok = {
+                let rt = runtime.lock().await;
+                current_proposer_name(&rt).as_deref() == Some(&cfg.node_name)
+            };
 
-    let sk = signing_key_from_hex(&cfg.private_key_hex)?;
-    let hello = sign_hello(
-        PeerHello {
-            version: WIRE_PROTOCOL_VERSION,
-            chain_id: cfg.chain_id.clone(),
-            node_name: cfg.node_name.clone(),
-            bind_addr: cfg.bind_addr.clone(),
-            public_key: public_key_hex(&sk),
-            challenge: format!("hello-{}-{}", cfg.node_name, now_ms()),
-            timestamp_ms: now_ms(),
-            signature: String::new(),
-        },
-        &cfg.private_key_hex,
-    )?;
+            if !proposer_ok {
+                None
+            } else {
+                let txs = {
+                    let mut mp = mempool.lock().await;
+                    let n = mp.len().min(100);
+                    mp.drain(..n).collect::<Vec<_>>()
+                };
 
-    writer
-        .write_all(serde_json::to_string(&hello)?.as_bytes())
-        .await?;
-    writer.write_all(b"\n").await?;
+                if txs.is_empty() {
+                    None
+                } else {
+                    let rt = runtime.lock().await;
+                    match rt.propose_block(txs, now_ms()) {
+                        Ok(block) => Some(block),
+                        Err(err) => {
+                            eprintln!("[{}] propose_block failed: {err:#}", cfg.node_name);
+                            None
+                        }
+                    }
+                }
+            }
+        };
 
-    let ack_line = lines
-        .next_line()
-        .await?
-        .ok_or_else(|| anyhow!("peer closed before ack"))?;
+        let Some(block) = maybe_block else { continue; };
 
-    let ack: PeerAck = serde_json::from_str(&ack_line)
-        .context("decoding inbound ack")?;
+        let local_vote = {
+            let rt = runtime.lock().await;
+            rt.sign_vote_for_block(&cfg.node_name, &cfg.private_key_hex, &block)?
+        };
 
-    let session_id = {
-        let mut rt = runtime.lock().await;
-        let session = rt.authenticate_peer(&hello, &ack)?;
-        session.session_id
-    };
+        let hash = block_id(&block)?;
 
-    sessions
-        .lock()
-        .await
-        .insert(ack.node_name.clone(), session_id.clone());
+        pending.lock().await.insert(
+            hash.clone(),
+            PendingBlock {
+                block: block.clone(),
+                votes: vec![local_vote],
+            },
+        );
 
-    let ping_env = sign_envelope(
-        SignedEnvelope {
-            version: WIRE_PROTOCOL_VERSION,
-            chain_id: cfg.chain_id.clone(),
-            session_id,
-            sender: cfg.node_name.clone(),
-            msg_type: "ping".to_string(),
-            payload: serde_json::json!({"ok": true}),
-            timestamp_ms: now_ms(),
-            signature: String::new(),
-        },
-        &cfg.private_key_hex,
-    )?;
+        println!(
+            "[{}] proposed block height={} hash={}",
+            cfg.node_name,
+            block.header.height,
+            hash
+        );
 
-    writer
-        .write_all(serde_json::to_string(&ping_env)?.as_bytes())
-        .await?;
-    writer.write_all(b"\n").await?;
+        let peers = {
+            let rt = runtime.lock().await;
+            rt.config.p2p_peers.clone()
+        };
 
-    Ok(())
+        for peer in peers {
+            let _ = send_wire_message(
+                peer,
+                cfg.clone(),
+                runtime.clone(),
+                sessions.clone(),
+                WireMessage::Proposal {
+                    block: block.clone(),
+                    proposer: cfg.node_name.clone(),
+                },
+            )
+            .await;
+        }
+
+        if let Some((block, votes)) = try_commit_pending(runtime.clone(), pending.clone()).await? {
+            let peers = {
+                let rt = runtime.lock().await;
+                rt.config.p2p_peers.clone()
+            };
+
+            println!(
+                "[{}] committed block height={} hash={}",
+                cfg.node_name,
+                block.header.height,
+                block_id(&block)?
+            );
+
+            for peer in peers {
+                let _ = send_wire_message(
+                    peer,
+                    cfg.clone(),
+                    runtime.clone(),
+                    sessions.clone(),
+                    WireMessage::Commit {
+                        block: block.clone(),
+                        votes: votes.clone(),
+                    },
+                )
+                .await;
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -307,10 +686,12 @@ async fn main() -> Result<()> {
     ));
     let mempool: SharedMempool = Arc::new(Mutex::new(VecDeque::new()));
     let sessions: SharedSessions = Arc::new(Mutex::new(HashMap::new()));
+    let pending: SharedPending = Arc::new(Mutex::new(HashMap::new()));
 
     let status_addr = derive_status_addr(&cfg.bind_addr)?;
     let app = Router::new()
         .route("/status", get(status_handler))
+        .route("/account/:address", get(account_handler))
         .route("/tx", post(submit_tx_handler))
         .with_state(AppState {
             runtime: runtime.clone(),
@@ -337,6 +718,8 @@ async fn main() -> Result<()> {
     println!("[{}] status/tx server on {}", cfg.node_name, status_addr);
 
     let accept_runtime = runtime.clone();
+    let accept_mempool = mempool.clone();
+    let accept_pending = pending.clone();
     let accept_sessions = sessions.clone();
     let accept_cfg = cfg.clone();
 
@@ -345,10 +728,21 @@ async fn main() -> Result<()> {
             match listener.accept().await {
                 Ok((socket, _addr)) => {
                     let runtime = accept_runtime.clone();
+                    let mempool = accept_mempool.clone();
+                    let pending = accept_pending.clone();
                     let sessions = accept_sessions.clone();
                     let cfg = accept_cfg.clone();
                     tokio::spawn(async move {
-                        if let Err(err) = handle_inbound(socket, runtime, sessions, cfg).await {
+                        if let Err(err) = handle_inbound(
+                            socket,
+                            runtime,
+                            mempool,
+                            pending,
+                            sessions,
+                            cfg,
+                        )
+                        .await
+                        {
                             eprintln!("inbound session error: {err:#}");
                         }
                     });
@@ -368,20 +762,26 @@ async fn main() -> Result<()> {
     let dial_task = tokio::spawn(async move {
         loop {
             for peer in dial_cfg.p2p_peers.clone() {
-                if let Err(err) = dial_peer(
-                    peer.clone(),
+                let _ = send_wire_message(
+                    peer,
+                    dial_cfg.clone(),
                     dial_runtime.clone(),
                     dial_sessions.clone(),
-                    dial_cfg.clone(),
+                    WireMessage::Ping,
                 )
-                .await
-                {
-                    eprintln!("[{}] dial {} failed: {err:#}", dial_cfg.node_name, peer);
-                }
+                .await;
             }
             sleep(Duration::from_secs(5)).await;
         }
     });
+
+    let produce_task = tokio::spawn(producer_loop(
+        runtime.clone(),
+        mempool.clone(),
+        pending.clone(),
+        sessions.clone(),
+        cfg.clone(),
+    ));
 
     let heartbeat_runtime = runtime.clone();
     let heartbeat_sessions = sessions.clone();
@@ -408,6 +808,7 @@ async fn main() -> Result<()> {
 
     accept_task.abort();
     dial_task.abort();
+    produce_task.abort();
     heartbeat_task.abort();
     control_task.abort();
 

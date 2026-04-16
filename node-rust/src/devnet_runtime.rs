@@ -157,9 +157,22 @@ impl DevnetRuntime {
     pub fn commit_block(&mut self, block: &Block, votes: &[Vote]) -> Result<CommitCertificate> {
         let cert = build_commit_certificate(block, votes, &self.state)?;
 
+        let execution = execute_block_deterministic(block, &self.state, &self.config.chain_id)?;
+
+        if execution.state_root != block.header.state_root {
+            return Err(anyhow!("block state root mismatch against deterministic execution"));
+        }
+        if execution.tx_root != block.header.tx_root {
+            return Err(anyhow!("block tx root mismatch against deterministic execution"));
+        }
+        if execution.gas_used != block.header.gas_used {
+            return Err(anyhow!("block gas_used mismatch against deterministic execution"));
+        }
+
         let next_seq = self.cursor.wal_entries_applied.saturating_add(1);
         self.storage.append_wal_certificate(next_seq, &cert)?;
 
+        self.state = execution.post_state;
         apply_commit_certificate(&cert, &mut self.state)?;
         self.cursor.wal_entries_applied = next_seq;
 

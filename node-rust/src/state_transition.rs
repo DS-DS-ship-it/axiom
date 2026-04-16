@@ -22,13 +22,14 @@ pub struct TxReceipt {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockExecutionResult {
     pub block_hash: String,
     pub tx_root: String,
     pub state_root: String,
     pub gas_used: u64,
     pub receipts: Vec<TxReceipt>,
+    pub post_state: ChainState,
 }
 
 pub fn canonical_state_root(state: &ChainState) -> Result<String> {
@@ -168,5 +169,6 @@ pub fn execute_block_deterministic(
         state_root,
         gas_used,
         receipts,
+        post_state: working_state,
     })
 }
