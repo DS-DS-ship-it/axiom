@@ -1,6 +1,7 @@
 use std::{
+    fs,
     collections::{BTreeMap, HashMap, VecDeque},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -20,7 +21,7 @@ use axiom_node::{
     validation::validate_transaction,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path as AxumPath, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -40,6 +41,7 @@ type SharedMempool = Arc<Mutex<VecDeque<Transaction>>>;
 type SharedSessions = Arc<Mutex<HashMap<String, String>>>;
 type SharedPending = Arc<Mutex<HashMap<String, PendingBlock>>>;
 type SharedExplorer = Arc<Mutex<ExplorerIndex>>;
+type SharedExplorerPath = Arc<PathBuf>;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -125,7 +127,7 @@ struct ExplorerTxView {
     max_fee_per_gas: u64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct ExplorerIndex {
     latest: Option<ExplorerBlockView>,
     blocks_by_height: BTreeMap<u64, ExplorerBlockView>,
@@ -221,7 +223,35 @@ fn validator_bind_addr(runtime: &DevnetRuntime, name: &str) -> Option<String> {
         .cloned()
 }
 
-async fn record_committed_block(explorer: SharedExplorer, block: Block) -> Result<()> {
+
+fn explorer_index_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("explorer_index.json")
+}
+
+fn load_explorer_index(path: &Path) -> Result<ExplorerIndex> {
+    if !path.exists() {
+        return Ok(ExplorerIndex::default());
+    }
+    let text = fs::read_to_string(path)?;
+    let idx: ExplorerIndex = serde_json::from_str(&text)?;
+    Ok(idx)
+}
+
+async fn save_explorer_index(explorer: SharedExplorer, path: SharedExplorerPath) -> Result<()> {
+    let snapshot = {
+        let ex = explorer.lock().await;
+        ex.clone()
+    };
+    let text = serde_json::to_string_pretty(&snapshot)?;
+    fs::write(path.as_ref(), text)?;
+    Ok(())
+}
+
+async fn record_committed_block(
+    explorer: SharedExplorer,
+    explorer_path: SharedExplorerPath,
+    block: Block,
+) -> Result<()> {
     let block_hash = block_id(&block)?;
     let mut tx_hashes = Vec::with_capacity(block.txs.len());
     let mut tx_views = Vec::with_capacity(block.txs.len());
@@ -244,6 +274,12 @@ async fn record_committed_block(explorer: SharedExplorer, block: Block) -> Resul
         });
     }
 
+    let effective_gas_used = if block.header.gas_used == 0 && !block.txs.is_empty() {
+        block.txs.iter().map(|tx| tx.gas_limit).sum()
+    } else {
+        block.header.gas_used
+    };
+
     let block_view = ExplorerBlockView {
         height: block.header.height,
         block_hash: block_hash.clone(),
@@ -256,16 +292,19 @@ async fn record_committed_block(explorer: SharedExplorer, block: Block) -> Resul
         tx_hashes,
         state_root: block.header.state_root.clone(),
         tx_root: block.header.tx_root.clone(),
-        gas_used: block.header.gas_used,
+        gas_used: effective_gas_used,
     };
 
-    let mut ex = explorer.lock().await;
-    ex.latest = Some(block_view.clone());
-    ex.blocks_by_height.insert(block_view.height, block_view);
-    for tx_view in tx_views {
-        ex.txs_by_hash.insert(tx_view.tx_hash.clone(), tx_view);
+    {
+        let mut ex = explorer.lock().await;
+        ex.latest = Some(block_view.clone());
+        ex.blocks_by_height.insert(block_view.height, block_view);
+        for tx_view in tx_views {
+            ex.txs_by_hash.insert(tx_view.tx_hash.clone(), tx_view);
+        }
     }
 
+    save_explorer_index(explorer, explorer_path).await?;
     Ok(())
 }
 
@@ -292,7 +331,7 @@ async fn status_handler(State(app): State<AppState>) -> impl IntoResponse {
 
 
 async fn account_handler(
-    Path(address): Path<String>,
+    AxumPath(address): AxumPath<String>,
     State(app): State<AppState>,
 ) -> impl IntoResponse {
     let rt = app.runtime.lock().await;
@@ -325,7 +364,7 @@ async fn block_latest_handler(State(app): State<AppState>) -> impl IntoResponse 
 }
 
 async fn block_by_height_handler(
-    Path(height): Path<u64>,
+    AxumPath(height): AxumPath<u64>,
     State(app): State<AppState>,
 ) -> impl IntoResponse {
     let ex = app.explorer.lock().await;
@@ -336,7 +375,7 @@ async fn block_by_height_handler(
 }
 
 async fn tx_by_hash_handler(
-    Path(tx_hash): Path<String>,
+    AxumPath(tx_hash): AxumPath<String>,
     State(app): State<AppState>,
 ) -> impl IntoResponse {
     let ex = app.explorer.lock().await;
@@ -525,6 +564,7 @@ async fn handle_wire_message(
     pending: SharedPending,
     sessions: SharedSessions,
     explorer: SharedExplorer,
+    explorer_path: SharedExplorerPath,
     cfg: NodeConfig,
     session_id: String,
 ) -> Result<()> {
@@ -606,7 +646,7 @@ async fn handle_wire_message(
                     block_id(&block)?
                 );
 
-                let _ = record_committed_block(explorer.clone(), block.clone()).await;
+                let _ = record_committed_block(explorer.clone(), explorer_path.clone(), block.clone()).await;
 
                 for peer in peers {
                     let _ = send_wire_message(
@@ -634,7 +674,7 @@ async fn handle_wire_message(
                 let mut rt = runtime.lock().await;
                 let _ = rt.commit_block(&block, &votes)?;
                 drop(rt);
-                let _ = record_committed_block(explorer.clone(), block.clone()).await;
+                let _ = record_committed_block(explorer.clone(), explorer_path.clone(), block.clone()).await;
             }
         }
 
@@ -651,6 +691,7 @@ async fn handle_inbound(
     pending: SharedPending,
     sessions: SharedSessions,
     explorer: SharedExplorer,
+    explorer_path: SharedExplorerPath,
     cfg: NodeConfig,
 ) -> Result<()> {
     let peer_addr = socket.peer_addr().ok();
@@ -722,6 +763,7 @@ async fn handle_inbound(
             pending.clone(),
             sessions.clone(),
             explorer.clone(),
+            explorer_path.clone(),
             cfg.clone(),
             session_id.clone(),
         )
@@ -740,6 +782,7 @@ async fn producer_loop(
     pending: SharedPending,
     sessions: SharedSessions,
     _explorer: SharedExplorer,
+    _explorer_path: SharedExplorerPath,
     cfg: NodeConfig,
 ) -> Result<()> {
     loop {
@@ -855,13 +898,14 @@ async fn main() -> Result<()> {
     let data_dir = PathBuf::from(&args.data_dir);
 
     let runtime = Arc::new(Mutex::new(
-        DevnetRuntime::bootstrap(cfg.clone(), data_dir)
+        DevnetRuntime::bootstrap(cfg.clone(), &data_dir)
             .context("bootstrap runtime")?,
     ));
     let mempool: SharedMempool = Arc::new(Mutex::new(VecDeque::new()));
     let sessions: SharedSessions = Arc::new(Mutex::new(HashMap::new()));
     let pending: SharedPending = Arc::new(Mutex::new(HashMap::new()));
-    let explorer: SharedExplorer = Arc::new(Mutex::new(ExplorerIndex::default()));
+    let explorer_path: SharedExplorerPath = Arc::new(explorer_index_path(&data_dir));
+    let explorer: SharedExplorer = Arc::new(Mutex::new(load_explorer_index(explorer_path.as_ref()).unwrap_or_default()));
 
     let status_addr = derive_status_addr(&cfg.bind_addr)?;
     let app = Router::new()
@@ -902,6 +946,7 @@ async fn main() -> Result<()> {
     let accept_pending = pending.clone();
     let accept_sessions = sessions.clone();
     let accept_explorer = explorer.clone();
+    let accept_explorer_path = explorer_path.clone();
     let accept_cfg = cfg.clone();
 
     let accept_task = tokio::spawn(async move {
@@ -913,6 +958,7 @@ async fn main() -> Result<()> {
                     let pending = accept_pending.clone();
                     let sessions = accept_sessions.clone();
                     let explorer = accept_explorer.clone();
+                    let explorer_path = accept_explorer_path.clone();
                     let cfg = accept_cfg.clone();
                     tokio::spawn(async move {
                         if let Err(err) = handle_inbound(
@@ -922,6 +968,7 @@ async fn main() -> Result<()> {
                             pending,
                             sessions,
                             explorer,
+                            explorer_path,
                             cfg,
                         )
                         .await
@@ -964,6 +1011,7 @@ async fn main() -> Result<()> {
         pending.clone(),
         sessions.clone(),
         explorer.clone(),
+        explorer_path.clone(),
         cfg.clone(),
     ));
 
