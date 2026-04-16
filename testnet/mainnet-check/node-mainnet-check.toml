@@ -1,0 +1,9 @@
+chain_id = "fortiq-mainnet"
+node_name = "mainnet-check"
+bind_addr = "127.0.0.1:9411"
+p2p_peers = []
+private_key_hex = "1111111111111111111111111111111111111111111111111111111111111111"
+validator_power = 100
+genesis_path = "../spec/fortiq-mainnet.json"
+state_path = "testnet/mainnet-check/node-mainnet-check-state.json"
+wal_path = "testnet/mainnet-check/node-mainnet-check.wal.jsonl"
