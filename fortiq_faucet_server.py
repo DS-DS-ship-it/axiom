@@ -2,7 +2,6 @@
 import json
 import os
 import subprocess
-import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.request import urlopen, Request
@@ -13,6 +12,11 @@ PORT = 8500
 SCRIPT_DIR = Path(__file__).resolve().parent
 NODE_RUST_DIR = Path(os.environ.get("AXIOM_NODE_RUST_DIR", SCRIPT_DIR / "node-rust"))
 
+def fetch_json(url: str):
+    req = Request(url, headers={"accept": "application/json"})
+    with urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
 def pick_submit_command(amount: int, address: str, base_url: str):
     built = NODE_RUST_DIR / "target" / "debug" / "axiom-dev-submit-auto"
     if built.exists():
@@ -22,10 +26,34 @@ def pick_submit_command(amount: int, address: str, base_url: str):
         "--submit", str(amount), address, base_url
     ]
 
-def fetch_json(url: str):
-    req = Request(url, headers={"accept": "application/json"})
-    with urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def pick_gen_command():
+    built = NODE_RUST_DIR / "target" / "debug" / "axiom-gen-address"
+    if built.exists():
+        return [str(built)]
+    return ["cargo", "run", "--bin", "axiom-gen-address"]
+
+def run_command(cmd):
+    proc = subprocess.run(
+        cmd,
+        cwd=NODE_RUST_DIR,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"command failed\ncmd={cmd}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+        )
+    return proc.stdout
+
+def parse_key_value_output(text: str):
+    out = {}
+    for line in text.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
 
 class Handler(BaseHTTPRequestHandler):
     def _cors(self):
@@ -57,6 +85,21 @@ class Handler(BaseHTTPRequestHandler):
                 "node_rust_dir": str(NODE_RUST_DIR),
             })
             return
+
+        if self.path == "/gen-address":
+            try:
+                raw = run_command(pick_gen_command())
+                parsed = parse_key_value_output(raw)
+                self._json(200, {
+                    "ok": True,
+                    "private_key_hex": parsed.get("private_key_hex", ""),
+                    "public_key": parsed.get("public_key", ""),
+                    "address": parsed.get("address", ""),
+                })
+            except Exception as exc:
+                self._json(500, {"ok": False, "error": str(exc)})
+            return
+
         self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self):
@@ -82,29 +125,12 @@ class Handler(BaseHTTPRequestHandler):
             base_url = str(data.get("base_url", "http://127.0.0.1:8401")).strip().rstrip("/")
 
             cmd = pick_submit_command(amount, address, base_url)
-            proc = subprocess.run(
-                cmd,
-                cwd=NODE_RUST_DIR,
-                text=True,
-                capture_output=True,
-                timeout=120,
-                check=False,
-            )
-
-            if proc.returncode != 0:
-                self._json(500, {
-                    "ok": False,
-                    "error": "submitter failed",
-                    "command": cmd,
-                    "stdout": proc.stdout,
-                    "stderr": proc.stderr,
-                })
-                return
+            raw_submit = run_command(cmd)
 
             try:
-                submit_response = json.loads(proc.stdout)
+                submit_response = json.loads(raw_submit)
             except Exception:
-                submit_response = {"raw": proc.stdout.strip()}
+                submit_response = {"raw": raw_submit.strip()}
 
             account = fetch_json(f"{base_url}/account/{address}")
             status = fetch_json(f"{base_url}/status")
