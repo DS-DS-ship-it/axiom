@@ -22,11 +22,12 @@ use axiom_node::{
 };
 use axum::{
     extract::{Path as AxumPath, State},
-    http::StatusCode,
+    http::{Method, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use tower_http::cors::{Any, CorsLayer};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -916,6 +917,12 @@ async fn main() -> Result<()> {
         .route("/tx/:hash", get(tx_by_hash_handler))
         .route("/peers", get(peers_handler))
         .route("/tx", post(submit_tx_handler))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers(Any),
+        )
         .with_state(AppState {
             runtime: runtime.clone(),
             mempool: mempool.clone(),
