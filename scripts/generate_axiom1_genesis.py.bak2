@@ -15,33 +15,11 @@ GENESIS = {
     {"name":"node3","public_key":"17cb79fb2b4120f2b1ec65e4198d6e08b28e813feb01e4a400839b85e18080ce","bind_addr":"127.0.0.1:7403","power":100,"stake":1000000},
     {"name":"node4","public_key":"d759793bbc13a2819a827c76adb6fba8a49aee007f49f2d0992d99b825ad2c48","bind_addr":"127.0.0.1:7404","power":100,"stake":1000000}
   ],
-  "accounts": [
-            {
-                "address": "axm_devnet_faucet",
-                "balance": 1000000000,
-                "nonce": 0,
-                "staked": 0
-            },
-            {
-                "address": "axm_ops_reserve",
-                "balance": 250000000,
-                "nonce": 0,
-                "staked": 0
-            },
-            {
-                "address": "axm_773136f4123d3746bf597db357d2415fed55f050",
-                "balance": 5000000,
-                "nonce": 0,
-                "staked": 0
-            },
-            {
-                "address": "axm_f7426c6c4cd4c0e171778352ea7315e4ea089ca6",
-                "balance": 5000000,
-                "nonce": 0,
-                "staked": 0
-            }
-        ],
-        "metadata":{"network":"devnet","asset":"AXM","purpose":"axiom-1 bootstrap"}
+  "accounts":[
+    {"address":"axm_devnet_faucet","balance":1000000000,"nonce":0,"staked":0},
+    {"address":"axm_ops_reserve","balance":250000000,"nonce":0,"staked":0}
+  ],
+  "metadata":{"network":"devnet","asset":"AXM","purpose":"axiom-1 bootstrap"}
 }
 
 KEYS = [

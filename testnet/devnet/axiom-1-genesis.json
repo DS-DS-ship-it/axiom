@@ -46,6 +46,18 @@
       "balance": 250000000,
       "nonce": 0,
       "staked": 0
+    },
+    {
+      "address": "axm_773136f4123d3746bf597db357d2415fed55f050",
+      "balance": 5000000,
+      "nonce": 0,
+      "staked": 0
+    },
+    {
+      "address": "axm_f7426c6c4cd4c0e171778352ea7315e4ea089ca6",
+      "balance": 5000000,
+      "nonce": 0,
+      "staked": 0
     }
   ],
   "metadata": {
