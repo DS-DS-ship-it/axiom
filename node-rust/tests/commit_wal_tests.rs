@@ -125,12 +125,32 @@ fn signed_vote(
 #[test]
 fn build_and_verify_commit_certificate_for_signed_quorum() {
     let (state, keys) = sample_state_and_keys();
-    let block = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
+    let block = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
     let block_hash = block_id(&block).unwrap();
 
     let votes = vec![
-        signed_vote("axiom-local", &block_hash, "val_a", 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &block_hash, "val_b", 1, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_a",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_b",
+            1,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
 
     let cert = build_commit_certificate(&block, &votes, &state).unwrap();
@@ -145,12 +165,32 @@ fn build_and_verify_commit_certificate_for_signed_quorum() {
 #[test]
 fn apply_commit_certificate_updates_height_and_tip() {
     let (mut state, keys) = sample_state_and_keys();
-    let block = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
+    let block = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
     let block_hash = block_id(&block).unwrap();
 
     let votes = vec![
-        signed_vote("axiom-local", &block_hash, "val_a", 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &block_hash, "val_b", 1, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_a",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_b",
+            1,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
 
     let cert = build_commit_certificate(&block, &votes, &state).unwrap();
@@ -166,21 +206,61 @@ fn wal_replay_restores_two_commits_after_restart() {
     let (mut state, keys) = sample_state_and_keys();
     let restored_template = state.clone();
 
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
     let hash1 = block_id(&block1).unwrap();
     let votes1 = vec![
-        signed_vote("axiom-local", &hash1, "val_a", 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &hash1, "val_b", 1, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &hash1,
+            "val_a",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &hash1,
+            "val_b",
+            1,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
     let cert1 = build_commit_certificate(&block1, &votes1, &state).unwrap();
     append_certificate(&wal_path, &cert1).unwrap();
     apply_commit_certificate(&cert1, &mut state).unwrap();
 
-    let block2 = signed_block("axiom-local", "val_b", keys.get("val_b").unwrap(), &state.tip_hash, 2);
+    let block2 = signed_block(
+        "axiom-local",
+        "val_b",
+        keys.get("val_b").unwrap(),
+        &state.tip_hash,
+        2,
+    );
     let hash2 = block_id(&block2).unwrap();
     let votes2 = vec![
-        signed_vote("axiom-local", &hash2, "val_a", 2, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &hash2, "val_b", 2, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &hash2,
+            "val_a",
+            2,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &hash2,
+            "val_b",
+            2,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
     let cert2 = build_commit_certificate(&block2, &votes2, &state).unwrap();
     append_certificate(&wal_path, &cert2).unwrap();
@@ -204,28 +284,70 @@ fn wal_replay_rejects_tampered_second_certificate_after_first_commit() {
     let (mut state, keys) = sample_state_and_keys();
     let restored_template = state.clone();
 
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
     let hash1 = block_id(&block1).unwrap();
     let votes1 = vec![
-        signed_vote("axiom-local", &hash1, "val_a", 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &hash1, "val_b", 1, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &hash1,
+            "val_a",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &hash1,
+            "val_b",
+            1,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
     let cert1 = build_commit_certificate(&block1, &votes1, &state).unwrap();
     append_certificate(&wal_path, &cert1).unwrap();
     apply_commit_certificate(&cert1, &mut state).unwrap();
 
-    let block2 = signed_block("axiom-local", "val_b", keys.get("val_b").unwrap(), &state.tip_hash, 2);
+    let block2 = signed_block(
+        "axiom-local",
+        "val_b",
+        keys.get("val_b").unwrap(),
+        &state.tip_hash,
+        2,
+    );
     let hash2 = block_id(&block2).unwrap();
     let votes2 = vec![
-        signed_vote("axiom-local", &hash2, "val_a", 2, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &hash2, "val_b", 2, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &hash2,
+            "val_a",
+            2,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &hash2,
+            "val_b",
+            2,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
     let mut cert2 = build_commit_certificate(&block2, &votes2, &state).unwrap();
     cert2.block_hash = "tampered_hash".to_string();
     append_certificate(&wal_path, &cert2).unwrap();
 
     let mut restored = restored_template.clone();
-    let err = replay_wal(&wal_path, &mut restored).unwrap_err().to_string();
+    let err = replay_wal(&wal_path, &mut restored)
+        .unwrap_err()
+        .to_string();
 
     assert!(err.contains("certificate block hash mismatch"));
     assert_eq!(restored.height, 1);
@@ -237,17 +359,39 @@ fn wal_replay_rejects_tampered_second_certificate_after_first_commit() {
 #[test]
 fn verify_commit_certificate_rejects_tampered_metadata() {
     let (state, keys) = sample_state_and_keys();
-    let block = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
+    let block = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
     let hash = block_id(&block).unwrap();
 
     let votes = vec![
-        signed_vote("axiom-local", &hash, "val_a", 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &hash, "val_b", 1, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &hash,
+            "val_a",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &hash,
+            "val_b",
+            1,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
 
     let mut cert = build_commit_certificate(&block, &votes, &state).unwrap();
     cert.approving_power = 999;
 
-    let err = verify_commit_certificate(&cert, &state).unwrap_err().to_string();
+    let err = verify_commit_certificate(&cert, &state)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("certificate approving power mismatch"));
 }

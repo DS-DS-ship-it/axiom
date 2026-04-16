@@ -82,7 +82,10 @@ fn ensure_no_conflicting_votes(votes: &[Vote], height: u64, round: u32) -> Resul
 
         if let Some(prev_hash) = seen.get(&vote.validator) {
             if prev_hash != &vote.block_hash {
-                return Err(anyhow!("conflicting votes from validator {}", vote.validator));
+                return Err(anyhow!(
+                    "conflicting votes from validator {}",
+                    vote.validator
+                ));
             }
         } else {
             seen.insert(vote.validator.clone(), vote.block_hash.clone());
@@ -152,7 +155,10 @@ pub fn finalize_block(
     state: &mut ChainState,
 ) -> Result<FinalizationOutcome> {
     ensure!(block.header.height == state.height + 1, "bad block height");
-    ensure!(block.header.parent_hash == state.tip_hash, "bad parent hash");
+    ensure!(
+        block.header.parent_hash == state.tip_hash,
+        "bad parent hash"
+    );
 
     verify_block_signature(block, state)?;
     ensure_no_conflicting_votes(votes, block.header.height, block.header.round)?;

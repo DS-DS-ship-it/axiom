@@ -139,5 +139,9 @@ fn invalid_transaction_yields_failed_receipt_but_deterministic_output() {
     let out = execute_block_deterministic(&block, &state, "axiom-local").unwrap();
     assert_eq!(out.receipts.len(), 1);
     assert!(!out.receipts[0].success);
-    assert!(out.receipts[0].error.as_deref().unwrap_or("").contains("insufficient balance"));
+    assert!(out.receipts[0]
+        .error
+        .as_deref()
+        .unwrap_or("")
+        .contains("insufficient balance"));
 }

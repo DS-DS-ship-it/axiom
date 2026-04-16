@@ -50,10 +50,7 @@ pub fn apply_transfer(
     sender.balance -= max_total;
     sender.nonce += 1;
 
-    let recipient = state
-        .accounts
-        .entry(recipient_addr)
-        .or_default();
+    let recipient = state.accounts.entry(recipient_addr).or_default();
 
     recipient.balance += value;
 

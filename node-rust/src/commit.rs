@@ -109,13 +109,22 @@ pub fn verify_commit_certificate(cert: &CommitCertificate, state: &ChainState) -
     verify_block_signature(&cert.block, state)?;
 
     let recomputed_hash = block_id(&cert.block)?;
-    ensure!(recomputed_hash == cert.block_hash, "certificate block hash mismatch");
+    ensure!(
+        recomputed_hash == cert.block_hash,
+        "certificate block hash mismatch"
+    );
 
     let total_power = total_voting_power(state);
-    ensure!(total_power == cert.total_power, "certificate total power mismatch");
+    ensure!(
+        total_power == cert.total_power,
+        "certificate total power mismatch"
+    );
 
     let quorum = quorum_threshold(total_power);
-    ensure!(quorum == cert.quorum_threshold, "certificate quorum mismatch");
+    ensure!(
+        quorum == cert.quorum_threshold,
+        "certificate quorum mismatch"
+    );
 
     let approving = compute_approving_power(
         &cert.votes,
@@ -134,8 +143,14 @@ pub fn verify_commit_certificate(cert: &CommitCertificate, state: &ChainState) -
 }
 
 pub fn apply_commit_certificate(cert: &CommitCertificate, state: &mut ChainState) -> Result<()> {
-    ensure!(cert.block.header.height == state.height + 1, "bad commit height");
-    ensure!(cert.block.header.parent_hash == state.tip_hash, "bad commit parent hash");
+    ensure!(
+        cert.block.header.height == state.height + 1,
+        "bad commit height"
+    );
+    ensure!(
+        cert.block.header.parent_hash == state.tip_hash,
+        "bad commit parent hash"
+    );
 
     verify_commit_certificate(cert, state)?;
 

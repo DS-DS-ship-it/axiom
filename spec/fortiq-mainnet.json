@@ -1,0 +1,84 @@
+{
+  "chain_id": "fortiq-mainnet",
+  "protocol_version": 1,
+  "genesis_time_ms": 1767225600000,
+  "base_fee": 1000,
+  "checkpoint_interval": 10000,
+  "decimals": 8,
+  "max_supply": 2100000000000000,
+  "initial_block_subsidy": 475000000,
+  "subsidy_halving_interval": 2103840,
+  "validators": [
+    {
+      "name": "validator1",
+      "public_key": "REPLACE_VALIDATOR1_PUBLIC_KEY",
+      "bind_addr": "validator1.fortiq.network:7401",
+      "power": 100,
+      "stake": 100000000000,
+      "reward_address": "REPLACE_VALIDATOR1_REWARD_ADDRESS"
+    },
+    {
+      "name": "validator2",
+      "public_key": "REPLACE_VALIDATOR2_PUBLIC_KEY",
+      "bind_addr": "validator2.fortiq.network:7401",
+      "power": 100,
+      "stake": 100000000000,
+      "reward_address": "REPLACE_VALIDATOR2_REWARD_ADDRESS"
+    },
+    {
+      "name": "validator3",
+      "public_key": "REPLACE_VALIDATOR3_PUBLIC_KEY",
+      "bind_addr": "validator3.fortiq.network:7401",
+      "power": 100,
+      "stake": 100000000000,
+      "reward_address": "REPLACE_VALIDATOR3_REWARD_ADDRESS"
+    },
+    {
+      "name": "validator4",
+      "public_key": "REPLACE_VALIDATOR4_PUBLIC_KEY",
+      "bind_addr": "validator4.fortiq.network:7401",
+      "power": 100,
+      "stake": 100000000000,
+      "reward_address": "REPLACE_VALIDATOR4_REWARD_ADDRESS"
+    }
+  ],
+  "accounts": [
+    {
+      "address": "REPLACE_FOUNDATION_TREASURY_ADDRESS",
+      "balance": 40000000000000,
+      "nonce": 0,
+      "staked": 0
+    },
+    {
+      "address": "REPLACE_ECOSYSTEM_ADDRESS",
+      "balance": 25000000000000,
+      "nonce": 0,
+      "staked": 0
+    },
+    {
+      "address": "REPLACE_LIQUIDITY_ADDRESS",
+      "balance": 20000000000000,
+      "nonce": 0,
+      "staked": 0
+    },
+    {
+      "address": "REPLACE_OPERATIONS_ADDRESS",
+      "balance": 10000000000000,
+      "nonce": 0,
+      "staked": 0
+    },
+    {
+      "address": "REPLACE_AUDIT_RESERVE_ADDRESS",
+      "balance": 5000000000000,
+      "nonce": 0,
+      "staked": 0
+    }
+  ],
+  "metadata": {
+    "network": "mainnet",
+    "asset": "FORT",
+    "token_name": "Fortiq",
+    "token_symbol": "FORT",
+    "notes": "Replace all REPLACE_* placeholders before hashing and launch."
+  }
+}

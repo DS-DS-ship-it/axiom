@@ -1,8 +1,4 @@
-use axiom_node::{
-    config::NodeConfig,
-    consensus::ConsensusEngine,
-    state::Validator,
-};
+use axiom_node::{config::NodeConfig, consensus::ConsensusEngine, state::Validator};
 
 fn sample_config() -> NodeConfig {
     NodeConfig {

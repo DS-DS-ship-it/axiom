@@ -146,12 +146,32 @@ fn build_cert(
     height: u64,
     proposer: &str,
 ) -> CommitCertificate {
-    let block = signed_block("axiom-local", proposer, keys.get(proposer).unwrap(), parent_hash, height);
+    let block = signed_block(
+        "axiom-local",
+        proposer,
+        keys.get(proposer).unwrap(),
+        parent_hash,
+        height,
+    );
     let block_hash = block_id(&block).unwrap();
 
     let votes = vec![
-        signed_vote("axiom-local", &block_hash, "val_a", height, 0, keys.get("val_a").unwrap()),
-        signed_vote("axiom-local", &block_hash, "val_b", height, 0, keys.get("val_b").unwrap()),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_a",
+            height,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
+        signed_vote(
+            "axiom-local",
+            &block_hash,
+            "val_b",
+            height,
+            0,
+            keys.get("val_b").unwrap(),
+        ),
     ];
 
     build_commit_certificate(&block, &votes, state).unwrap()

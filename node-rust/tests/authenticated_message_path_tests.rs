@@ -13,7 +13,9 @@ use axiom_node::{
     config::NodeConfig,
     crypto::{public_key_hex, sign_bytes, signing_key_from_hex},
     finality::{block_id, block_signing_bytes, vote_signing_bytes},
-    network::{decode_message_line, encode_message, verify_message, NetworkMessage, MAX_MESSAGE_BYTES},
+    network::{
+        decode_message_line, encode_message, verify_message, NetworkMessage, MAX_MESSAGE_BYTES,
+    },
     state::{ChainState, Validator},
     types::{Block, BlockHeader, Vote},
 };
@@ -81,8 +83,8 @@ fn wait_for_port(port: u16, timeout: Duration) {
 }
 
 fn send_line(addr: &str, line: &str) {
-    let mut stream = TcpStream::connect(addr)
-        .unwrap_or_else(|e| panic!("failed to connect to {}: {}", addr, e));
+    let mut stream =
+        TcpStream::connect(addr).unwrap_or_else(|e| panic!("failed to connect to {}: {}", addr, e));
     stream
         .write_all(line.as_bytes())
         .unwrap_or_else(|e| panic!("failed to write line to {}: {}", addr, e));
@@ -152,7 +154,9 @@ genesis_path = "{}"
     out
 }
 
-fn load_validator_state_and_keys(config_paths: &[String]) -> (ChainState, BTreeMap<String, SigningKey>, String) {
+fn load_validator_state_and_keys(
+    config_paths: &[String],
+) -> (ChainState, BTreeMap<String, SigningKey>, String) {
     let mut state = ChainState {
         tip_hash: "GENESIS".to_string(),
         ..Default::default()
@@ -202,12 +206,7 @@ fn signed_block(chain_id: &str, proposer: &str, key: &SigningKey) -> Block {
     block
 }
 
-fn signed_vote(
-    chain_id: &str,
-    block_hash: &str,
-    validator: &str,
-    key: &SigningKey,
-) -> Vote {
+fn signed_vote(chain_id: &str, block_hash: &str, validator: &str, key: &SigningKey) -> Vote {
     let mut vote = Vote {
         chain_id: chain_id.to_string(),
         block_hash: block_hash.to_string(),

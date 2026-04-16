@@ -6,18 +6,17 @@ use std::{collections::BTreeMap, fs, path::Path};
 use crate::state::{Account, ChainState, Validator};
 
 pub const FORTIQ_MAINNET_CHAIN_ID: &str = "fortiq-mainnet";
-pub const FORTIQ_MAINNET_PROTOCOL_VERSION: u16 = 1;
-pub const FORTIQ_MAINNET_SPEC_HASH: &str =
-    "a7f29db24806cae1706cabf4b74585385c6d51042e1576e9a6dd1aa138848112";
+pub const FORTIQ_MAINNET_PROTOCOL_VERSION: u32 = 1;
+pub const FORTIQ_MAINNET_SPEC_HASH: &str = "REPLACE_WITH_CANONICAL_SPEC_HASH";
+
+fn default_decimals() -> u8 {
+    8
+}
 
 pub const AXIOM1_CHAIN_ID: &str = "axiom-1";
 pub const AXIOM1_PROTOCOL_VERSION: u16 = 1;
 pub const AXIOM1_BASE_FEE: u64 = 2;
 pub const AXIOM1_CHECKPOINT_INTERVAL: u64 = 10;
-
-fn default_decimals() -> u8 {
-    8
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GenesisValidator {
@@ -26,8 +25,6 @@ pub struct GenesisValidator {
     pub bind_addr: String,
     pub power: u64,
     pub stake: u128,
-    #[serde(default)]
-    pub reward_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -45,19 +42,6 @@ pub struct Axiom1Genesis {
     pub genesis_time_ms: u64,
     pub base_fee: u64,
     pub checkpoint_interval: u64,
-
-    #[serde(default = "default_decimals")]
-    pub decimals: u8,
-
-    #[serde(default)]
-    pub max_supply: u128,
-
-    #[serde(default)]
-    pub initial_block_subsidy: u128,
-
-    #[serde(default)]
-    pub subsidy_halving_interval: u64,
-
     pub validators: Vec<GenesisValidator>,
     pub accounts: Vec<GenesisAccount>,
     pub metadata: BTreeMap<String, String>,
@@ -67,25 +51,11 @@ impl Axiom1Genesis {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let text = fs::read_to_string(path)?;
         let genesis: Self = serde_json::from_str(&text)?;
-
-        match genesis.chain_id.as_str() {
-            AXIOM1_CHAIN_ID => {
-                ensure!(
-                    genesis.protocol_version == AXIOM1_PROTOCOL_VERSION,
-                    "unexpected protocol version"
-                );
-            }
-            FORTIQ_MAINNET_CHAIN_ID => {
-                ensure!(
-                    genesis.protocol_version == FORTIQ_MAINNET_PROTOCOL_VERSION,
-                    "unexpected mainnet protocol version"
-                );
-            }
-            other => {
-                return Err(anyhow::anyhow!("unexpected chain id: {}", other));
-            }
-        }
-
+        ensure!(genesis.chain_id == AXIOM1_CHAIN_ID, "unexpected chain id");
+        ensure!(
+            genesis.protocol_version == AXIOM1_PROTOCOL_VERSION,
+            "unexpected protocol version"
+        );
         Ok(genesis)
     }
 
@@ -93,6 +63,37 @@ impl Axiom1Genesis {
         let bytes = serde_json::to_vec_pretty(self)?;
         fs::write(path, bytes)?;
         Ok(())
+    }
+
+    pub fn to_chain_state(&self) -> ChainState {
+        let mut state = ChainState {
+            tip_hash: "GENESIS".to_string(),
+            ..Default::default()
+        };
+
+        for validator in &self.validators {
+            state.validators.insert(
+                validator.name.clone(),
+                Validator {
+                    public_key: validator.public_key.clone(),
+                    power: validator.power,
+                    stake: validator.stake,
+                },
+            );
+        }
+
+        for account in &self.accounts {
+            state.accounts.insert(
+                account.address.clone(),
+                Account {
+                    balance: account.balance,
+                    nonce: account.nonce,
+                    staked: account.staked,
+                },
+            );
+        }
+
+        state
     }
 
     pub fn canonical_hash(&self) -> Result<String> {
@@ -119,7 +120,7 @@ impl Axiom1Genesis {
             "mainnet subsidy_halving_interval must be > 0"
         );
 
-        let genesis_alloc: u128 = self.accounts.iter().map(|a| a.balance).sum();
+        let genesis_alloc: u128 = self.accounts.iter().map(|a| u128::from(a.balance)).sum();
 
         ensure!(
             genesis_alloc <= self.max_supply,
@@ -144,45 +145,5 @@ impl Axiom1Genesis {
 
     pub fn checkpoint_interval(&self) -> u64 {
         self.checkpoint_interval
-    }
-
-    pub fn to_chain_state(&self) -> ChainState {
-        let mut state = ChainState::default();
-        state.chain_id = self.chain_id.clone();
-        state.protocol_version = u32::from(self.protocol_version);
-        state.height = 0;
-        state.tip_hash = "GENESIS".to_string();
-        state.decimals = self.decimals;
-        state.max_supply = self.max_supply;
-
-        let genesis_issued: u128 = self.accounts.iter().map(|a| a.balance).sum();
-        state.total_issued = genesis_issued;
-        state.initial_block_subsidy = self.initial_block_subsidy;
-        state.subsidy_halving_interval = self.subsidy_halving_interval;
-
-        for validator in &self.validators {
-            state.validators.insert(
-                validator.name.clone(),
-                Validator {
-                    public_key: validator.public_key.clone(),
-                    power: validator.power,
-                    stake: validator.stake,
-                    reward_address: validator.reward_address.clone(),
-                },
-            );
-        }
-
-        for account in &self.accounts {
-            state.accounts.insert(
-                account.address.clone(),
-                Account {
-                    balance: account.balance,
-                    nonce: account.nonce,
-                    staked: account.staked,
-                },
-            );
-        }
-
-        state
     }
 }

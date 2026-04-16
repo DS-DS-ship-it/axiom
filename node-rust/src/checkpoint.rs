@@ -72,7 +72,10 @@ pub fn load_checkpoint_bundle(
     }
 
     let manifest: CheckpointManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
-    ensure!(manifest.chain_id == expected_chain_id, "wrong chain id in checkpoint manifest");
+    ensure!(
+        manifest.chain_id == expected_chain_id,
+        "wrong chain id in checkpoint manifest"
+    );
 
     let snapshot_path = root
         .join("checkpoints")

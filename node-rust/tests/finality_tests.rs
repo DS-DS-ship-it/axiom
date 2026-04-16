@@ -261,7 +261,13 @@ fn finalize_block_rejects_conflicting_votes() {
 
     let votes = vec![
         signed_vote("val_a", &block_hash, 1, 0, keys.get("val_a").unwrap()),
-        signed_vote("val_a", "different_block_hash", 1, 0, keys.get("val_a").unwrap()),
+        signed_vote(
+            "val_a",
+            "different_block_hash",
+            1,
+            0,
+            keys.get("val_a").unwrap(),
+        ),
         signed_vote("val_b", &block_hash, 1, 0, keys.get("val_b").unwrap()),
     ];
 

@@ -69,10 +69,12 @@ impl StorageEngine {
     }
 
     pub fn load_cursor(&self) -> Result<PersistedCursor> {
-        Ok(Self::get_json(&self.meta, b"cursor")?.unwrap_or(PersistedCursor {
-            checkpoint_id: None,
-            wal_entries_applied: 0,
-        }))
+        Ok(
+            Self::get_json(&self.meta, b"cursor")?.unwrap_or(PersistedCursor {
+                checkpoint_id: None,
+                wal_entries_applied: 0,
+            }),
+        )
     }
 
     pub fn append_wal_certificate(&self, seq: u64, cert: &CommitCertificate) -> Result<()> {
@@ -86,7 +88,8 @@ impl StorageEngine {
         for item in self.wal.range(start_seq.to_be_bytes()..) {
             let (k, v) = item?;
             ensure!(k.len() == 8, "bad WAL key length");
-            let seq = u64::from_be_bytes(k.as_ref().try_into().map_err(|_| anyhow!("bad WAL key"))?);
+            let seq =
+                u64::from_be_bytes(k.as_ref().try_into().map_err(|_| anyhow!("bad WAL key"))?);
             let cert = serde_json::from_slice::<CommitCertificate>(&v)?;
             out.push((seq, cert));
         }

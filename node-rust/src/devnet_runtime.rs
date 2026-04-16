@@ -12,7 +12,9 @@ use crate::{
     config::NodeConfig,
     crypto::{sign_bytes, signing_key_from_hex},
     finality::{block_id, block_signing_bytes, vote_signing_bytes},
-    network_auth::{authenticate_pair, verify_envelope, PeerAck, PeerHello, SessionInfo, SignedEnvelope},
+    network_auth::{
+        authenticate_pair, verify_envelope, PeerAck, PeerHello, SessionInfo, SignedEnvelope,
+    },
     state::ChainState,
     state_transition::execute_block_deterministic,
     storage_engine::{PersistedCursor, StorageEngine},
@@ -160,13 +162,19 @@ impl DevnetRuntime {
         let execution = execute_block_deterministic(block, &self.state, &self.config.chain_id)?;
 
         if execution.state_root != block.header.state_root {
-            return Err(anyhow!("block state root mismatch against deterministic execution"));
+            return Err(anyhow!(
+                "block state root mismatch against deterministic execution"
+            ));
         }
         if execution.tx_root != block.header.tx_root {
-            return Err(anyhow!("block tx root mismatch against deterministic execution"));
+            return Err(anyhow!(
+                "block tx root mismatch against deterministic execution"
+            ));
         }
         if execution.gas_used != block.header.gas_used {
-            return Err(anyhow!("block gas_used mismatch against deterministic execution"));
+            return Err(anyhow!(
+                "block gas_used mismatch against deterministic execution"
+            ));
         }
 
         let next_seq = self.cursor.wal_entries_applied.saturating_add(1);
@@ -177,7 +185,9 @@ impl DevnetRuntime {
         self.cursor.wal_entries_applied = next_seq;
 
         let checkpoint_every = self.genesis.checkpoint_interval();
-        if checkpoint_every > 0 && self.state.height > 0 && self.state.height.is_multiple_of(checkpoint_every)
+        if checkpoint_every > 0
+            && self.state.height > 0
+            && self.state.height.is_multiple_of(checkpoint_every)
         {
             let checkpoint_id = format!("h{:010}", self.state.height);
             self.storage.put_checkpoint(&checkpoint_id, &self.state)?;
@@ -189,7 +199,8 @@ impl DevnetRuntime {
                 &self.cursor,
                 &self.state,
             )?;
-            self.storage.prune_wal_through(self.cursor.wal_entries_applied)?;
+            self.storage
+                .prune_wal_through(self.cursor.wal_entries_applied)?;
         }
 
         self.storage.save_chain_state(&self.state)?;

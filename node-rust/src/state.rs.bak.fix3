@@ -1,22 +1,35 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Account {
     pub balance: u128,
     pub nonce: u64,
     pub staked: u128,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Contract {
-    pub code_hash: String,
-    pub storage_root: String,
     pub owner: String,
-    pub nonce: u64,
+    pub code_hash: String,
+    pub balance: u128,
+    pub storage: BTreeMap<String, i128>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    Default,
+)]
 pub struct Validator {
     pub public_key: String,
     pub power: u64,
@@ -25,7 +38,19 @@ pub struct Validator {
     pub reward_address: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+)]
 pub struct ChainState {
     pub chain_id: String,
     pub protocol_version: u32,
@@ -33,13 +58,12 @@ pub struct ChainState {
     pub height: u64,
     pub tip_hash: String,
 
-    pub accounts: BTreeMap<String, Account>,
-    pub contracts: BTreeMap<String, Contract>,
-    pub validators: BTreeMap<String, Validator>,
+    pub accounts: std::collections::BTreeMap<String, Account>,
+    pub contracts: std::collections::BTreeMap<String, Contract>,
+    pub validators: std::collections::BTreeMap<String, Validator>,
 
     pub total_burned: u128,
     pub total_tipped: u128,
-    pub total_slashed: u128,
 
     #[serde(default)]
     pub decimals: u8,
@@ -55,9 +79,6 @@ pub struct ChainState {
 
     #[serde(default)]
     pub subsidy_halving_interval: u64,
-
-    #[serde(default)]
-    pub applied_evidence_ids: BTreeSet<String>,
 }
 
 impl Default for ChainState {
@@ -67,18 +88,16 @@ impl Default for ChainState {
             protocol_version: 0,
             height: 0,
             tip_hash: "GENESIS".to_string(),
-            accounts: BTreeMap::new(),
-            contracts: BTreeMap::new(),
-            validators: BTreeMap::new(),
+            accounts: std::collections::BTreeMap::new(),
+            contracts: std::collections::BTreeMap::new(),
+            validators: std::collections::BTreeMap::new(),
             total_burned: 0,
             total_tipped: 0,
-            total_slashed: 0,
             decimals: 8,
             max_supply: 0,
             total_issued: 0,
             initial_block_subsidy: 0,
             subsidy_halving_interval: 0,
-            applied_evidence_ids: BTreeSet::new(),
         }
     }
 }

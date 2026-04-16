@@ -138,19 +138,32 @@ fn ensure_timestamp_fresh(ts: u64) -> Result<()> {
 }
 
 pub fn verify_hello(hello: &PeerHello, expected_chain_id: &str) -> Result<()> {
-    ensure!(hello.version == WIRE_PROTOCOL_VERSION, "unsupported protocol version");
+    ensure!(
+        hello.version == WIRE_PROTOCOL_VERSION,
+        "unsupported protocol version"
+    );
     ensure!(hello.chain_id == expected_chain_id, "wrong chain id");
     ensure!(!hello.node_name.is_empty(), "missing node name");
     ensure!(!hello.challenge.is_empty(), "missing challenge");
     ensure_timestamp_fresh(hello.timestamp_ms)?;
-    verify_bytes(&hello.public_key, &hello_signing_bytes(hello)?, &hello.signature)?;
+    verify_bytes(
+        &hello.public_key,
+        &hello_signing_bytes(hello)?,
+        &hello.signature,
+    )?;
     Ok(())
 }
 
 pub fn verify_ack(ack: &PeerAck, expected_chain_id: &str, expected_challenge: &str) -> Result<()> {
-    ensure!(ack.version == WIRE_PROTOCOL_VERSION, "unsupported protocol version");
+    ensure!(
+        ack.version == WIRE_PROTOCOL_VERSION,
+        "unsupported protocol version"
+    );
     ensure!(ack.chain_id == expected_chain_id, "wrong chain id");
-    ensure!(ack.peer_challenge == expected_challenge, "challenge mismatch");
+    ensure!(
+        ack.peer_challenge == expected_challenge,
+        "challenge mismatch"
+    );
     ensure!(!ack.own_challenge.is_empty(), "missing own challenge");
     ensure_timestamp_fresh(ack.timestamp_ms)?;
     verify_bytes(&ack.public_key, &ack_signing_bytes(ack)?, &ack.signature)?;
@@ -165,13 +178,11 @@ pub fn authenticate_pair(
     verify_hello(hello, expected_chain_id)?;
     verify_ack(ack, expected_chain_id, &hello.challenge)?;
 
-    let remote_address = address_from_vk(
-        &ed25519_dalek::VerifyingKey::from_bytes(
-            &hex::decode(&hello.public_key)?
-                .try_into()
-                .map_err(|_| anyhow!("bad public key len"))?,
-        )?,
-    );
+    let remote_address = address_from_vk(&ed25519_dalek::VerifyingKey::from_bytes(
+        &hex::decode(&hello.public_key)?
+            .try_into()
+            .map_err(|_| anyhow!("bad public key len"))?,
+    )?);
 
     let session_bytes = serde_json::to_vec(&json!({
         "hello_pk": hello.public_key,
@@ -195,7 +206,10 @@ pub fn verify_envelope(
     state: &ChainState,
     expected_chain_id: &str,
 ) -> Result<()> {
-    ensure!(env.version == WIRE_PROTOCOL_VERSION, "unsupported protocol version");
+    ensure!(
+        env.version == WIRE_PROTOCOL_VERSION,
+        "unsupported protocol version"
+    );
     ensure!(env.chain_id == expected_chain_id, "wrong chain id");
     ensure!(env.session_id == session.session_id, "wrong session id");
     ensure!(env.sender == session.remote_node_name, "wrong sender name");

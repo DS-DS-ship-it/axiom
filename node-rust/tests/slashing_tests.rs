@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use axiom_node::{
     crypto::{generate_key, public_key_hex, sign_bytes},
     finality::{block_id, block_signing_bytes, vote_signing_bytes},
-    slashing::{
-        build_equivocation_evidence, evidence_id, slash_for_equivocation, votes_conflict,
-    },
+    slashing::{build_equivocation_evidence, evidence_id, slash_for_equivocation, votes_conflict},
     state::{ChainState, Validator},
     types::{Block, BlockHeader, Vote},
 };
@@ -54,7 +52,13 @@ fn sample_state_and_keys() -> (ChainState, BTreeMap<String, SigningKey>) {
     (state, keys)
 }
 
-fn signed_block(chain_id: &str, proposer: &str, key: &SigningKey, parent: &str, height: u64) -> Block {
+fn signed_block(
+    chain_id: &str,
+    proposer: &str,
+    key: &SigningKey,
+    parent: &str,
+    height: u64,
+) -> Block {
     let mut block = Block {
         header: BlockHeader {
             chain_id: chain_id.to_string(),
@@ -101,15 +105,55 @@ fn signed_vote(
 #[test]
 fn votes_conflict_only_for_same_validator_height_round_and_different_hash() {
     let (state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "OTHER_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "OTHER_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let c = signed_vote("axiom-local", &h2, "val_c", 1, 0, keys.get("val_c").unwrap());
-    let d = signed_vote("axiom-local", &h2, "val_b", 2, 0, keys.get("val_b").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let c = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_c",
+        1,
+        0,
+        keys.get("val_c").unwrap(),
+    );
+    let d = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        2,
+        0,
+        keys.get("val_b").unwrap(),
+    );
 
     assert!(votes_conflict(&a, &b));
     assert!(!votes_conflict(&a, &c));
@@ -120,13 +164,39 @@ fn votes_conflict_only_for_same_validator_height_round_and_different_hash() {
 #[test]
 fn build_equivocation_evidence_accepts_valid_conflicting_signed_votes() {
     let (state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_b").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
 
     let evidence = build_equivocation_evidence(&a, &b, &state).unwrap();
 
@@ -139,13 +209,39 @@ fn build_equivocation_evidence_accepts_valid_conflicting_signed_votes() {
 #[test]
 fn build_equivocation_evidence_rejects_forged_vote() {
     let (state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let forged = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_c").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let forged = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_c").unwrap(),
+    );
 
     assert!(build_equivocation_evidence(&a, &forged, &state).is_err());
 }
@@ -153,13 +249,39 @@ fn build_equivocation_evidence_rejects_forged_vote() {
 #[test]
 fn slash_for_equivocation_reduces_stake_and_power_and_records_evidence() {
     let (mut state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_b").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
 
     let evidence = build_equivocation_evidence(&a, &b, &state).unwrap();
     let out = slash_for_equivocation(&mut state, &evidence, 2_000).unwrap();
@@ -180,13 +302,39 @@ fn slash_for_equivocation_reduces_stake_and_power_and_records_evidence() {
 #[test]
 fn slash_for_equivocation_rejects_duplicate_evidence() {
     let (mut state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_b").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
 
     let evidence = build_equivocation_evidence(&a, &b, &state).unwrap();
     slash_for_equivocation(&mut state, &evidence, 1_000).unwrap();
@@ -204,13 +352,39 @@ fn slash_for_equivocation_minimum_penalty_is_one() {
     state.validators.get_mut("val_c").unwrap().stake = 1;
     state.validators.get_mut("val_c").unwrap().power = 1;
 
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_c", 1, 0, keys.get("val_c").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_c", 1, 0, keys.get("val_c").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_c",
+        1,
+        0,
+        keys.get("val_c").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_c",
+        1,
+        0,
+        keys.get("val_c").unwrap(),
+    );
 
     let evidence = build_equivocation_evidence(&a, &b, &state).unwrap();
     let out = slash_for_equivocation(&mut state, &evidence, 1).unwrap();
@@ -223,13 +397,39 @@ fn slash_for_equivocation_minimum_penalty_is_one() {
 #[test]
 fn slash_for_equivocation_rejects_zero_penalty() {
     let (state, keys) = sample_state_and_keys();
-    let block1 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "GENESIS", 1);
-    let block2 = signed_block("axiom-local", "val_a", keys.get("val_a").unwrap(), "ALT_PARENT", 1);
+    let block1 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "GENESIS",
+        1,
+    );
+    let block2 = signed_block(
+        "axiom-local",
+        "val_a",
+        keys.get("val_a").unwrap(),
+        "ALT_PARENT",
+        1,
+    );
     let h1 = block_id(&block1).unwrap();
     let h2 = block_id(&block2).unwrap();
 
-    let a = signed_vote("axiom-local", &h1, "val_b", 1, 0, keys.get("val_b").unwrap());
-    let b = signed_vote("axiom-local", &h2, "val_b", 1, 0, keys.get("val_b").unwrap());
+    let a = signed_vote(
+        "axiom-local",
+        &h1,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
+    let b = signed_vote(
+        "axiom-local",
+        &h2,
+        "val_b",
+        1,
+        0,
+        keys.get("val_b").unwrap(),
+    );
 
     let evidence = build_equivocation_evidence(&a, &b, &state).unwrap();
     let mut state2 = state.clone();

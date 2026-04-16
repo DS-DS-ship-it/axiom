@@ -1,6 +1,6 @@
 use std::{
-    fs,
     collections::{BTreeMap, HashMap, VecDeque},
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -12,11 +12,11 @@ use axiom_node::{
     crypto::{public_key_hex, signing_key_from_hex},
     devnet_runtime::DevnetRuntime,
     finality::block_id,
-    state_transition::canonical_tx_hash,
     network_auth::{
         now_ms, sign_ack, sign_envelope, sign_hello, PeerAck, PeerHello, SignedEnvelope,
         WIRE_PROTOCOL_VERSION,
     },
+    state_transition::canonical_tx_hash,
     types::{Block, Transaction, Vote},
     validation::validate_transaction,
 };
@@ -27,7 +27,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use tower_http::cors::{Any, CorsLayer};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -36,6 +35,7 @@ use tokio::{
     sync::Mutex,
     time::sleep,
 };
+use tower_http::cors::{Any, CorsLayer};
 
 type SharedRuntime = Arc<Mutex<DevnetRuntime>>;
 type SharedMempool = Arc<Mutex<VecDeque<Transaction>>>;
@@ -71,10 +71,22 @@ struct PendingBlock {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum WireMessage {
-    GossipTx { tx: Transaction },
-    Proposal { block: Block, proposer: String },
-    Vote { block_hash: String, vote: Vote, proposer: String },
-    Commit { block: Block, votes: Vec<Vote> },
+    GossipTx {
+        tx: Transaction,
+    },
+    Proposal {
+        block: Block,
+        proposer: String,
+    },
+    Vote {
+        block_hash: String,
+        vote: Vote,
+        proposer: String,
+    },
+    Commit {
+        block: Block,
+        votes: Vec<Vote>,
+    },
     Ping,
 }
 
@@ -173,10 +185,9 @@ struct SubmitTxResponse {
 }
 
 fn load_config(path: &str) -> Result<NodeConfig> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading config {}", path))?;
-    let cfg: NodeConfig = toml::from_str(&text)
-        .with_context(|| format!("parsing config {}", path))?;
+    let text = std::fs::read_to_string(path).with_context(|| format!("reading config {}", path))?;
+    let cfg: NodeConfig =
+        toml::from_str(&text).with_context(|| format!("parsing config {}", path))?;
     Ok(cfg)
 }
 
@@ -223,7 +234,6 @@ fn validator_bind_addr(runtime: &DevnetRuntime, name: &str) -> Option<String> {
         .find(|addr| addr.ends_with(suffix))
         .cloned()
 }
-
 
 fn explorer_index_path(data_dir: &Path) -> PathBuf {
     data_dir.join("explorer_index.json")
@@ -330,7 +340,6 @@ async fn status_handler(State(app): State<AppState>) -> impl IntoResponse {
     })
 }
 
-
 async fn account_handler(
     AxumPath(address): AxumPath<String>,
     State(app): State<AppState>,
@@ -354,7 +363,6 @@ async fn account_handler(
         })
     }
 }
-
 
 async fn block_latest_handler(State(app): State<AppState>) -> impl IntoResponse {
     let ex = app.explorer.lock().await;
@@ -475,8 +483,7 @@ async fn handshake_outbound(
         .await?
         .ok_or_else(|| anyhow!("peer closed before ack"))?;
 
-    let ack: PeerAck = serde_json::from_str(&ack_line)
-        .context("decoding inbound ack")?;
+    let ack: PeerAck = serde_json::from_str(&ack_line).context("decoding inbound ack")?;
 
     let session = {
         let mut rt = runtime.lock().await;
@@ -542,7 +549,9 @@ async fn try_commit_pending(
             map.get(&hash).cloned()
         };
 
-        let Some(pb) = maybe_pb else { continue; };
+        let Some(pb) = maybe_pb else {
+            continue;
+        };
 
         let commit_ok = {
             let mut rt = runtime.lock().await;
@@ -633,7 +642,8 @@ async fn handle_wire_message(
                 }
             }
 
-            if let Some((block, votes)) = try_commit_pending(runtime.clone(), pending.clone()).await?
+            if let Some((block, votes)) =
+                try_commit_pending(runtime.clone(), pending.clone()).await?
             {
                 let peers = {
                     let rt = runtime.lock().await;
@@ -647,7 +657,9 @@ async fn handle_wire_message(
                     block_id(&block)?
                 );
 
-                let _ = record_committed_block(explorer.clone(), explorer_path.clone(), block.clone()).await;
+                let _ =
+                    record_committed_block(explorer.clone(), explorer_path.clone(), block.clone())
+                        .await;
 
                 for peer in peers {
                     let _ = send_wire_message(
@@ -675,7 +687,9 @@ async fn handle_wire_message(
                 let mut rt = runtime.lock().await;
                 let _ = rt.commit_block(&block, &votes)?;
                 drop(rt);
-                let _ = record_committed_block(explorer.clone(), explorer_path.clone(), block.clone()).await;
+                let _ =
+                    record_committed_block(explorer.clone(), explorer_path.clone(), block.clone())
+                        .await;
             }
         }
 
@@ -704,8 +718,7 @@ async fn handle_inbound(
         .await?
         .ok_or_else(|| anyhow!("peer closed before hello"))?;
 
-    let hello: PeerHello = serde_json::from_str(&first)
-        .context("decoding inbound hello")?;
+    let hello: PeerHello = serde_json::from_str(&first).context("decoding inbound hello")?;
 
     let sk = signing_key_from_hex(&cfg.private_key_hex)?;
     let ack = sign_ack(
@@ -819,7 +832,9 @@ async fn producer_loop(
             }
         };
 
-        let Some(block) = maybe_block else { continue; };
+        let Some(block) = maybe_block else {
+            continue;
+        };
 
         let local_vote = {
             let rt = runtime.lock().await;
@@ -838,9 +853,7 @@ async fn producer_loop(
 
         println!(
             "[{}] proposed block height={} hash={}",
-            cfg.node_name,
-            block.header.height,
-            hash
+            cfg.node_name, block.header.height, hash
         );
 
         let peers = {
@@ -899,14 +912,15 @@ async fn main() -> Result<()> {
     let data_dir = PathBuf::from(&args.data_dir);
 
     let runtime = Arc::new(Mutex::new(
-        DevnetRuntime::bootstrap(cfg.clone(), &data_dir)
-            .context("bootstrap runtime")?,
+        DevnetRuntime::bootstrap(cfg.clone(), &data_dir).context("bootstrap runtime")?,
     ));
     let mempool: SharedMempool = Arc::new(Mutex::new(VecDeque::new()));
     let sessions: SharedSessions = Arc::new(Mutex::new(HashMap::new()));
     let pending: SharedPending = Arc::new(Mutex::new(HashMap::new()));
     let explorer_path: SharedExplorerPath = Arc::new(explorer_index_path(&data_dir));
-    let explorer: SharedExplorer = Arc::new(Mutex::new(load_explorer_index(explorer_path.as_ref()).unwrap_or_default()));
+    let explorer: SharedExplorer = Arc::new(Mutex::new(
+        load_explorer_index(explorer_path.as_ref()).unwrap_or_default(),
+    ));
 
     let status_addr = derive_status_addr(&cfg.bind_addr)?;
     let app = Router::new()
@@ -945,7 +959,10 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("binding {}", cfg.bind_addr))?;
 
-    println!("[{}] axiom-devnet listening on {}", cfg.node_name, cfg.bind_addr);
+    println!(
+        "[{}] axiom-devnet listening on {}",
+        cfg.node_name, cfg.bind_addr
+    );
     println!("[{}] status/tx server on {}", cfg.node_name, status_addr);
 
     let accept_runtime = runtime.clone();

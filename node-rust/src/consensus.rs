@@ -39,20 +39,11 @@ impl ConsensusEngine {
     }
 
     pub fn load_or_new(config: NodeConfig) -> Result<Self> {
-        let (mut state, mut wal_entries_applied) =
-            if let Some(path) = config.state_path.as_deref() {
-                if Path::new(path).exists() {
-                    let snapshot = persistence::load_snapshot_for_chain(path, &config.chain_id)?;
-                    (snapshot.state, snapshot.wal_entries_applied)
-                } else {
-                    (
-                        ChainState {
-                            tip_hash: "GENESIS".to_string(),
-                            ..Default::default()
-                        },
-                        0,
-                    )
-                }
+        let (mut state, mut wal_entries_applied) = if let Some(path) = config.state_path.as_deref()
+        {
+            if Path::new(path).exists() {
+                let snapshot = persistence::load_snapshot_for_chain(path, &config.chain_id)?;
+                (snapshot.state, snapshot.wal_entries_applied)
             } else {
                 (
                     ChainState {
@@ -61,7 +52,16 @@ impl ConsensusEngine {
                     },
                     0,
                 )
-            };
+            }
+        } else {
+            (
+                ChainState {
+                    tip_hash: "GENESIS".to_string(),
+                    ..Default::default()
+                },
+                0,
+            )
+        };
 
         if let Some(path) = config.wal_path.as_deref() {
             if Path::new(path).exists() {

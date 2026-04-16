@@ -10,7 +10,9 @@ use std::{
 use axiom_node::{
     crypto::{public_key_hex, sign_bytes, signing_key_from_hex},
     finality::{block_id, block_signing_bytes, vote_signing_bytes},
-    network::{decode_message_line, encode_message, verify_message, NetworkMessage, MAX_MESSAGE_BYTES},
+    network::{
+        decode_message_line, encode_message, verify_message, NetworkMessage, MAX_MESSAGE_BYTES,
+    },
     state::{ChainState, Validator},
     types::{Block, BlockHeader, Vote},
 };
@@ -78,8 +80,8 @@ fn wait_for_port(port: u16, timeout: Duration) {
 }
 
 fn send_line(addr: &str, line: &str) {
-    let mut stream = TcpStream::connect(addr)
-        .unwrap_or_else(|e| panic!("failed to connect to {}: {}", addr, e));
+    let mut stream =
+        TcpStream::connect(addr).unwrap_or_else(|e| panic!("failed to connect to {}: {}", addr, e));
     stream
         .write_all(line.as_bytes())
         .unwrap_or_else(|e| panic!("failed to write line to {}: {}", addr, e));
@@ -155,10 +157,22 @@ fn build_validator_state() -> (ChainState, BTreeMap<String, SigningKey>, String)
     let mut keys = BTreeMap::new();
 
     let hexes = [
-        ("node1", "1111111111111111111111111111111111111111111111111111111111111111"),
-        ("node2", "2222222222222222222222222222222222222222222222222222222222222222"),
-        ("node3", "3333333333333333333333333333333333333333333333333333333333333333"),
-        ("node4", "4444444444444444444444444444444444444444444444444444444444444444"),
+        (
+            "node1",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+        ),
+        (
+            "node2",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+        ),
+        (
+            "node3",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+        ),
+        (
+            "node4",
+            "4444444444444444444444444444444444444444444444444444444444444444",
+        ),
     ];
 
     for (name, hex) in hexes {
@@ -238,9 +252,24 @@ fn abuse_limit_harness_survives_malformed_and_oversized_message_storm() {
 
     let valid_messages = vec![
         NetworkMessage::Block(block.clone()),
-        NetworkMessage::Vote(signed_vote(&chain_id, &block_hash, "node2", keys.get("node2").unwrap())),
-        NetworkMessage::Vote(signed_vote(&chain_id, &block_hash, "node3", keys.get("node3").unwrap())),
-        NetworkMessage::Vote(signed_vote(&chain_id, &block_hash, "node4", keys.get("node4").unwrap())),
+        NetworkMessage::Vote(signed_vote(
+            &chain_id,
+            &block_hash,
+            "node2",
+            keys.get("node2").unwrap(),
+        )),
+        NetworkMessage::Vote(signed_vote(
+            &chain_id,
+            &block_hash,
+            "node3",
+            keys.get("node3").unwrap(),
+        )),
+        NetworkMessage::Vote(signed_vote(
+            &chain_id,
+            &block_hash,
+            "node4",
+            keys.get("node4").unwrap(),
+        )),
     ];
 
     for msg in &valid_messages {
@@ -262,7 +291,12 @@ fn abuse_limit_harness_survives_malformed_and_oversized_message_storm() {
         send_line("127.0.0.1:7201", &oversized);
     }
 
-    let forged = NetworkMessage::Vote(signed_vote(&chain_id, &block_hash, "node2", keys.get("node4").unwrap()));
+    let forged = NetworkMessage::Vote(signed_vote(
+        &chain_id,
+        &block_hash,
+        "node2",
+        keys.get("node4").unwrap(),
+    ));
     let forged_line = encode_message(&forged).unwrap();
     let decoded_forged = decode_message_line(&forged_line).unwrap();
     assert!(verify_message(&decoded_forged, &state).is_err());

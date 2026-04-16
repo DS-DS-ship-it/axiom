@@ -65,7 +65,10 @@ pub fn apply_transfer_deterministic(
 
     ensure!(tx.kind == "transfer", "unsupported tx kind");
     ensure!(base_fee_per_gas > 0, "base_fee_per_gas must be > 0");
-    ensure!(tx.max_fee_per_gas >= base_fee_per_gas, "max_fee_per_gas below base fee");
+    ensure!(
+        tx.max_fee_per_gas >= base_fee_per_gas,
+        "max_fee_per_gas below base fee"
+    );
 
     let recipient_addr = tx
         .recipient
@@ -121,7 +124,8 @@ pub fn apply_transaction_deterministic(
             burned_fee: out.burned_fee,
             tipped_fee: out.tipped_fee,
             transferred_value: out.transferred_value,
-            post_state_root: canonical_state_root(state).unwrap_or_else(|_| "state_root_error".to_string()),
+            post_state_root: canonical_state_root(state)
+                .unwrap_or_else(|_| "state_root_error".to_string()),
             error: None,
         },
         Err(err) => TxReceipt {
@@ -131,7 +135,8 @@ pub fn apply_transaction_deterministic(
             burned_fee: 0,
             tipped_fee: 0,
             transferred_value: 0,
-            post_state_root: canonical_state_root(state).unwrap_or_else(|_| "state_root_error".to_string()),
+            post_state_root: canonical_state_root(state)
+                .unwrap_or_else(|_| "state_root_error".to_string()),
             error: Some(err.to_string()),
         },
     }
@@ -142,7 +147,10 @@ pub fn execute_block_deterministic(
     pre_state: &ChainState,
     expected_chain_id: &str,
 ) -> Result<BlockExecutionResult> {
-    ensure!(block.header.chain_id == expected_chain_id, "wrong block chain id");
+    ensure!(
+        block.header.chain_id == expected_chain_id,
+        "wrong block chain id"
+    );
 
     let mut working_state = pre_state.clone();
     let mut receipts = Vec::with_capacity(block.txs.len());

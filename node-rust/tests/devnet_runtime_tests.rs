@@ -37,10 +37,22 @@ fn write_devnet_files(
     std::fs::create_dir_all(root).unwrap();
 
     let key_hexes = [
-        ("node1", "1111111111111111111111111111111111111111111111111111111111111111"),
-        ("node2", "2222222222222222222222222222222222222222222222222222222222222222"),
-        ("node3", "3333333333333333333333333333333333333333333333333333333333333333"),
-        ("node4", "4444444444444444444444444444444444444444444444444444444444444444"),
+        (
+            "node1",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+        ),
+        (
+            "node2",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+        ),
+        (
+            "node3",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+        ),
+        (
+            "node4",
+            "4444444444444444444444444444444444444444444444444444444444444444",
+        ),
     ];
 
     let mut keys = BTreeMap::new();
@@ -171,7 +183,6 @@ fn axiom1_bootstrap_and_commit_round_trip() {
     assert_eq!(runtime.state.tip_hash, cert.block_hash);
     drop(runtime);
 
-
     let restored = DevnetRuntime::bootstrap(config, root.join("node1")).unwrap();
     assert_eq!(restored.state.height, 1);
     assert_eq!(restored.state.tip_hash, cert.block_hash);
@@ -231,5 +242,7 @@ fn axiom1_authenticated_session_can_verify_signed_envelope() {
     )
     .unwrap();
 
-    runtime.verify_peer_envelope(&session.session_id, &env).unwrap();
+    runtime
+        .verify_peer_envelope(&session.session_id, &env)
+        .unwrap();
 }

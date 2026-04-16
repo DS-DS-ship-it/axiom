@@ -68,7 +68,9 @@ fn checkpoint_bundle_round_trip() {
     };
 
     write_checkpoint_bundle(&root, "axiom-local", "cp-9", &cursor, &state).unwrap();
-    let loaded = load_checkpoint_bundle(&root, "axiom-local").unwrap().unwrap();
+    let loaded = load_checkpoint_bundle(&root, "axiom-local")
+        .unwrap()
+        .unwrap();
 
     assert_eq!(loaded.0.checkpoint_id, "cp-9");
     assert_eq!(loaded.0.wal_entries_applied, 19);
