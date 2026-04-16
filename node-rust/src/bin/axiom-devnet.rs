@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -11,6 +11,7 @@ use axiom_node::{
     crypto::{public_key_hex, signing_key_from_hex},
     devnet_runtime::DevnetRuntime,
     finality::block_id,
+    state_transition::canonical_tx_hash,
     network_auth::{
         now_ms, sign_ack, sign_envelope, sign_hello, PeerAck, PeerHello, SignedEnvelope,
         WIRE_PROTOCOL_VERSION,
@@ -38,6 +39,7 @@ type SharedRuntime = Arc<Mutex<DevnetRuntime>>;
 type SharedMempool = Arc<Mutex<VecDeque<Transaction>>>;
 type SharedSessions = Arc<Mutex<HashMap<String, String>>>;
 type SharedPending = Arc<Mutex<HashMap<String, PendingBlock>>>;
+type SharedExplorer = Arc<Mutex<ExplorerIndex>>;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -52,6 +54,7 @@ struct AppState {
     runtime: SharedRuntime,
     mempool: SharedMempool,
     sessions: SharedSessions,
+    explorer: SharedExplorer,
     node_name: String,
     checkpoint_interval: u64,
 }
@@ -89,6 +92,70 @@ struct AccountView {
     balance: u128,
     nonce: u64,
     staked: u128,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExplorerBlockView {
+    height: u64,
+    block_hash: String,
+    parent_hash: String,
+    proposer: String,
+    round: u64,
+    slot: u64,
+    timestamp_ms: u64,
+    tx_count: usize,
+    tx_hashes: Vec<String>,
+    state_root: String,
+    tx_root: String,
+    gas_used: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExplorerTxView {
+    tx_hash: String,
+    block_height: u64,
+    block_hash: String,
+    sender: String,
+    recipient: Option<String>,
+    nonce: u64,
+    value: u64,
+    kind: String,
+    timestamp_ms: u64,
+    gas_limit: u64,
+    max_fee_per_gas: u64,
+}
+
+#[derive(Debug, Default)]
+struct ExplorerIndex {
+    latest: Option<ExplorerBlockView>,
+    blocks_by_height: BTreeMap<u64, ExplorerBlockView>,
+    txs_by_hash: HashMap<String, ExplorerTxView>,
+}
+
+#[derive(Serialize)]
+struct ExplorerBlockResponse {
+    found: bool,
+    block: Option<ExplorerBlockView>,
+}
+
+#[derive(Serialize)]
+struct ExplorerTxResponse {
+    found: bool,
+    tx: Option<ExplorerTxView>,
+}
+
+#[derive(Serialize)]
+struct PeerSessionView {
+    peer_name: String,
+    session_id: String,
+}
+
+#[derive(Serialize)]
+struct PeersView {
+    node_name: String,
+    configured_peers: Vec<String>,
+    connected_peer_count: usize,
+    connected_peers: Vec<PeerSessionView>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +221,54 @@ fn validator_bind_addr(runtime: &DevnetRuntime, name: &str) -> Option<String> {
         .cloned()
 }
 
+async fn record_committed_block(explorer: SharedExplorer, block: Block) -> Result<()> {
+    let block_hash = block_id(&block)?;
+    let mut tx_hashes = Vec::with_capacity(block.txs.len());
+    let mut tx_views = Vec::with_capacity(block.txs.len());
+
+    for tx in &block.txs {
+        let tx_hash = canonical_tx_hash(tx)?;
+        tx_hashes.push(tx_hash.clone());
+        tx_views.push(ExplorerTxView {
+            tx_hash,
+            block_height: block.header.height,
+            block_hash: block_hash.clone(),
+            sender: tx.sender.clone(),
+            recipient: tx.recipient.clone(),
+            nonce: tx.nonce,
+            value: tx.value,
+            kind: tx.kind.clone(),
+            timestamp_ms: tx.timestamp_ms,
+            gas_limit: tx.gas_limit,
+            max_fee_per_gas: tx.max_fee_per_gas,
+        });
+    }
+
+    let block_view = ExplorerBlockView {
+        height: block.header.height,
+        block_hash: block_hash.clone(),
+        parent_hash: block.header.parent_hash.clone(),
+        proposer: block.header.proposer.clone(),
+        round: u64::from(block.header.round),
+        slot: block.header.slot,
+        timestamp_ms: block.header.timestamp_ms,
+        tx_count: block.txs.len(),
+        tx_hashes,
+        state_root: block.header.state_root.clone(),
+        tx_root: block.header.tx_root.clone(),
+        gas_used: block.header.gas_used,
+    };
+
+    let mut ex = explorer.lock().await;
+    ex.latest = Some(block_view.clone());
+    ex.blocks_by_height.insert(block_view.height, block_view);
+    for tx_view in tx_views {
+        ex.txs_by_hash.insert(tx_view.tx_hash.clone(), tx_view);
+    }
+
+    Ok(())
+}
+
 async fn status_handler(State(app): State<AppState>) -> impl IntoResponse {
     let rt = app.runtime.lock().await;
     let mempool = app.mempool.lock().await;
@@ -198,6 +313,57 @@ async fn account_handler(
             staked: 0,
         })
     }
+}
+
+
+async fn block_latest_handler(State(app): State<AppState>) -> impl IntoResponse {
+    let ex = app.explorer.lock().await;
+    Json(ExplorerBlockResponse {
+        found: ex.latest.is_some(),
+        block: ex.latest.clone(),
+    })
+}
+
+async fn block_by_height_handler(
+    Path(height): Path<u64>,
+    State(app): State<AppState>,
+) -> impl IntoResponse {
+    let ex = app.explorer.lock().await;
+    Json(ExplorerBlockResponse {
+        found: ex.blocks_by_height.contains_key(&height),
+        block: ex.blocks_by_height.get(&height).cloned(),
+    })
+}
+
+async fn tx_by_hash_handler(
+    Path(tx_hash): Path<String>,
+    State(app): State<AppState>,
+) -> impl IntoResponse {
+    let ex = app.explorer.lock().await;
+    Json(ExplorerTxResponse {
+        found: ex.txs_by_hash.contains_key(&tx_hash),
+        tx: ex.txs_by_hash.get(&tx_hash).cloned(),
+    })
+}
+
+async fn peers_handler(State(app): State<AppState>) -> impl IntoResponse {
+    let rt = app.runtime.lock().await;
+    let sessions = app.sessions.lock().await;
+
+    let connected_peers = sessions
+        .iter()
+        .map(|(peer_name, session_id)| PeerSessionView {
+            peer_name: peer_name.clone(),
+            session_id: session_id.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    Json(PeersView {
+        node_name: app.node_name.clone(),
+        configured_peers: rt.config.p2p_peers.clone(),
+        connected_peer_count: connected_peers.len(),
+        connected_peers,
+    })
 }
 
 async fn submit_tx_handler(
@@ -358,6 +524,7 @@ async fn handle_wire_message(
     mempool: SharedMempool,
     pending: SharedPending,
     sessions: SharedSessions,
+    explorer: SharedExplorer,
     cfg: NodeConfig,
     session_id: String,
 ) -> Result<()> {
@@ -439,6 +606,8 @@ async fn handle_wire_message(
                     block_id(&block)?
                 );
 
+                let _ = record_committed_block(explorer.clone(), block.clone()).await;
+
                 for peer in peers {
                     let _ = send_wire_message(
                         peer,
@@ -464,6 +633,8 @@ async fn handle_wire_message(
             if should_apply {
                 let mut rt = runtime.lock().await;
                 let _ = rt.commit_block(&block, &votes)?;
+                drop(rt);
+                let _ = record_committed_block(explorer.clone(), block.clone()).await;
             }
         }
 
@@ -479,6 +650,7 @@ async fn handle_inbound(
     mempool: SharedMempool,
     pending: SharedPending,
     sessions: SharedSessions,
+    explorer: SharedExplorer,
     cfg: NodeConfig,
 ) -> Result<()> {
     let peer_addr = socket.peer_addr().ok();
@@ -549,6 +721,7 @@ async fn handle_inbound(
             mempool.clone(),
             pending.clone(),
             sessions.clone(),
+            explorer.clone(),
             cfg.clone(),
             session_id.clone(),
         )
@@ -566,6 +739,7 @@ async fn producer_loop(
     mempool: SharedMempool,
     pending: SharedPending,
     sessions: SharedSessions,
+    _explorer: SharedExplorer,
     cfg: NodeConfig,
 ) -> Result<()> {
     loop {
@@ -687,16 +861,22 @@ async fn main() -> Result<()> {
     let mempool: SharedMempool = Arc::new(Mutex::new(VecDeque::new()));
     let sessions: SharedSessions = Arc::new(Mutex::new(HashMap::new()));
     let pending: SharedPending = Arc::new(Mutex::new(HashMap::new()));
+    let explorer: SharedExplorer = Arc::new(Mutex::new(ExplorerIndex::default()));
 
     let status_addr = derive_status_addr(&cfg.bind_addr)?;
     let app = Router::new()
         .route("/status", get(status_handler))
         .route("/account/:address", get(account_handler))
+        .route("/block/latest", get(block_latest_handler))
+        .route("/block/:height", get(block_by_height_handler))
+        .route("/tx/:hash", get(tx_by_hash_handler))
+        .route("/peers", get(peers_handler))
         .route("/tx", post(submit_tx_handler))
         .with_state(AppState {
             runtime: runtime.clone(),
             mempool: mempool.clone(),
             sessions: sessions.clone(),
+            explorer: explorer.clone(),
             node_name: cfg.node_name.clone(),
             checkpoint_interval: 10,
         });
@@ -721,6 +901,7 @@ async fn main() -> Result<()> {
     let accept_mempool = mempool.clone();
     let accept_pending = pending.clone();
     let accept_sessions = sessions.clone();
+    let accept_explorer = explorer.clone();
     let accept_cfg = cfg.clone();
 
     let accept_task = tokio::spawn(async move {
@@ -731,6 +912,7 @@ async fn main() -> Result<()> {
                     let mempool = accept_mempool.clone();
                     let pending = accept_pending.clone();
                     let sessions = accept_sessions.clone();
+                    let explorer = accept_explorer.clone();
                     let cfg = accept_cfg.clone();
                     tokio::spawn(async move {
                         if let Err(err) = handle_inbound(
@@ -739,6 +921,7 @@ async fn main() -> Result<()> {
                             mempool,
                             pending,
                             sessions,
+                            explorer,
                             cfg,
                         )
                         .await
@@ -780,6 +963,7 @@ async fn main() -> Result<()> {
         mempool.clone(),
         pending.clone(),
         sessions.clone(),
+        explorer.clone(),
         cfg.clone(),
     ));
 

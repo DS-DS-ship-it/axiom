@@ -7,7 +7,7 @@ use axiom_node::{
 fn main() {
     let key_hex = "5555555555555555555555555555555555555555555555555555555555555555";
     let recipient = "axm_f7426c6c4cd4c0e171778352ea7315e4ea089ca6";
-    let nonce = 0u64;
+    let nonce = 1u64;
     let value = 1000u64;
 
     let sk = signing_key_from_hex(key_hex).unwrap();
